@@ -21,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://gitee.com/y_project/RuoYi-Vue.git"
+    "url": "https://gitee.com/Z-crab/opentcs-rcs.git"
   },
   "dependencies": {
     "@riophae/vue-treeselect": "0.4.0",
@@ -37,6 +37,7 @@
     "js-cookie": "3.0.1",
     "jsencrypt": "3.0.0-rc.1",
     "nprogress": "0.2.0",
+    "pnpm": "^10.24.0",
     "quill": "2.0.2",
     "screenfull": "5.0.2",
     "sortablejs": "1.10.2",

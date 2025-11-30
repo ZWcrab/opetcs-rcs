@@ -60,7 +60,27 @@
             <groupId>com.ruoyi</groupId>
             <artifactId>ruoyi-generator</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>org.opentcs</groupId>
+            <artifactId>opentcs-common</artifactId>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.opentcs/opentcs-api-injection -->
+        <dependency>
+            <groupId>org.opentcs</groupId>
+            <artifactId>opentcs-api-injection</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opentcs</groupId>
+            <artifactId>opentcs-api-base</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opentcs</groupId>
+            <artifactId>opentcs-kernel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.opentcs</groupId>
+            <artifactId>opentcs-kernel-extension-http-services</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
