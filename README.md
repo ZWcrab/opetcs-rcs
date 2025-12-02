@@ -1,10 +1,12 @@
 
 <h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">openTCS-RCS</h1>
-<h4 align="center"><openTCS>是一个基于Spring Boot的开源项目，用于管理和监控车辆交通流量。</openTCS></h4>
+<h4 align="center">是一个基于Spring Boot的开源项目，用于管理和监控车辆交通流量。</h4>
 
 
 ## 平台简介
 
+* 基于openTCS 7.0.1 版本。
+* 基于RuoYi 低平台框架。
 * 前端采用Vue、Element UI。
 * 后端采用Spring Boot、Spring Security、Redis & Jwt。
 * 权限认证使用Jwt，支持多终端认证系统。
@@ -13,7 +15,6 @@
 * 提供了技术栈（[Vue3](https://v3.cn.vuejs.org) [Element Plus](https://element-plus.org/zh-CN) [Vite](https://cn.vitejs.dev)）版本[RuoYi-Vue3](https://gitcode.com/yangzongzhuan/RuoYi-Vue3)，保持同步更新。
 * 提供了单应用版本[RuoYi-Vue-fast](https://gitcode.com/yangzongzhuan/RuoYi-Vue-fast)，Oracle版本[RuoYi-Vue-Oracle](https://gitcode.com/yangzongzhuan/RuoYi-Vue-Oracle)，保持同步更新。
 * 不分离版本，请移步[RuoYi](https://gitee.com/y_project/RuoYi)，微服务版本，请移步[RuoYi-Cloud](https://gitee.com/y_project/RuoYi-Cloud)
-* 阿里云折扣场：[点我进入](http://aly.ruoyi.vip)，腾讯云秒杀场：[点我进入](http://txy.ruoyi.vip)&nbsp;&nbsp;
 
 ## 内置功能
 
