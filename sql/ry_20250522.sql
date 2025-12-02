@@ -260,6 +260,10 @@ insert into sys_menu values('1058', '导入代码', '116', '4', '#', '', '', '',
 insert into sys_menu values('1059', '预览代码', '116', '5', '#', '', '', '', 1, 0, 'F', '0', '0', 'tool:gen:preview',           '#', 'admin', sysdate(), '', null, '');
 insert into sys_menu values('1060', '生成代码', '116', '6', '#', '', '', '', 1, 0, 'F', '0', '0', 'tool:gen:code',              '#', 'admin', sysdate(), '', null, '');
 
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark) VALUES (2001, '地图管理', 2000, 1, 'map', 'scheduler/map/index', null, '', 1, 0, 'C', '0', '0', '', 'edit', 'admin', '2025-11-29 23:56:42', 'admin', '2025-11-29 23:57:53', '');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark) VALUES (2002, '订单管理', 2000, 2, 'order', 'scheduler/order/index', null, '', 1, 0, 'C', '0', '0', '', 'list', 'admin', '2025-11-29 23:59:55', 'admin', '2025-11-30 00:07:20', '');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark) VALUES (2003, '车辆管理', 2000, 3, 'vehicles', 'scheduler/vehicles/index', null, '', 1, 0, 'C', '0', '0', null, 'list', 'admin', '2025-11-30 00:00:50', '', null, '');
+
 
 -- ----------------------------
 -- 6、用户和角色关联表  用户N-1角色
