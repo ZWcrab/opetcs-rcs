@@ -75,19 +75,17 @@ export const constantRoutes = [
     ]
   },
   {
-    path: '/user',
+    path: '/robot',
     component: Layout,
-    hidden: true,
-    redirect: 'noredirect',
     children: [
       {
-        path: 'profile',
-        component: () => import('@/views/system/user/profile/index'),
-        name: 'Profile',
-        meta: { title: '个人中心', icon: 'user' }
+        path: 'index',
+        component: () => import('@/views/robot/index'),
+        name: 'RobotSimulation',
+        meta: { title: 'AGV机器人仿真', icon: 'monitor', affix: false }
       }
     ]
-  }
+  },
 ]
 
 // 动态路由，基于用户权限动态去加载

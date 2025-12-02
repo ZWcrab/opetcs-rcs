@@ -77,9 +77,15 @@
             <groupId>org.opentcs</groupId>
             <artifactId>opentcs-kernel</artifactId>
         </dependency>
+        <!-- MQTT客户端依赖 -->
         <dependency>
-            <groupId>org.opentcs</groupId>
-            <artifactId>opentcs-kernel-extension-http-services</artifactId>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.integration</groupId>
+            <artifactId>spring-integration-mqtt</artifactId>
         </dependency>
     </dependencies>
 
