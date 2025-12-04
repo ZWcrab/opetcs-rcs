@@ -29,6 +29,9 @@
               <button @click="turnLeft">左转</button>
               <button @click="turnRight">右转</button>
               <button @click="resetPosition">重置</button>
+              <button @click="loadPoints" :disabled="loadingMap" style="background-color: #4CAF50;">
+                {{ loadingMap ? '加载中...' : '加载地图' }}
+              </button>
             </div>
           </div>
           <div class="control-group">
@@ -78,7 +81,7 @@ export default {
       mixer: null,
       clock: null,
       animationId: null,
-      speed: 0.5,
+      speed: 1,
       agvModel: null,
       // 移动状态管理
       isMoving: false,
@@ -100,6 +103,8 @@ export default {
       mqttMessages: [],
       // 面板状态
       panelExpanded: true,
+      // 加载状态
+      loadingMap: false,
       // 点位数据
       points: [],
       pointObjects: [],
@@ -140,6 +145,7 @@ export default {
     // 加载点位数据
     async loadPoints() {
       try {
+        this.loadingMap = true;
         const response = await getPoints();
         this.points = response.data || response.rows || [];
         this.createPoints();
@@ -147,6 +153,8 @@ export default {
         this.createVehicles();
       } catch (error) {
         console.error('加载点位数据失败:', error);
+      } finally {
+        this.loadingMap = false;
       }
     },
 
@@ -882,7 +890,7 @@ export default {
 
       // 处理转向逻辑
       if (this.isTurning && this.agvModel) {
-        const rotationSpeed = 1.0 * speedValue;
+        const rotationSpeed = 6.0 * speedValue;
         let angleDiff = this.targetRotation - this.agvModel.rotation.y;
 
         // 规范化角度差到[-π, π]范围，确保车辆选择最短路径
@@ -929,7 +937,7 @@ export default {
 
       // 处理移动到目标位置的逻辑
       if (this.isMovingToTarget && this.agvModel && this.targetPosition) {
-        const moveSpeed = 4.0 * speedValue;
+        const moveSpeed = 6.0 * speedValue;
 
         // 计算当前位置到目标位置的方向
         const direction = new THREE.Vector2(
@@ -994,7 +1002,7 @@ export default {
       // 处理手动移动逻辑
       else if (this.isMoving && this.agvModel && !this.isTurning) {
         console.log('AGV is moving in direction:', this.moveDirection);
-        const moveSpeed = 4.0 * speedValue;
+        const moveSpeed = 6.0 * speedValue;
         let moved = false;
 
         switch (this.moveDirection) {
