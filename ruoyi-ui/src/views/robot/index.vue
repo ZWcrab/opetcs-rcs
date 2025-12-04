@@ -1,23 +1,62 @@
 <template>
-  <div class="robot-simulation">
-    <div id="container"></div>
-    <div class="controls">
-      <h3>AGV机器人仿真</h3>
-      <div class="control-group">
-        <label>速度：</label>
-        <input type="range" min="0" max="1" step="0.01" v-model.number="speed" />
-        <span>{{ Number(speed).toFixed(2) }}</span>
-      </div>
-      <div class="control-group">
-        <button @click="moveForward">前进</button>
-        <button @click="moveBackward">后退</button>
-        <button @click="turnLeft">左转</button>
-        <button @click="turnRight">右转</button>
-        <button @click="resetPosition">重置位置</button>
+    <div class="robot-simulation">
+      <div id="container"></div>
+      <div class="controls" :class="{ collapsed: !panelExpanded }">
+        <div class="panel-header">
+          <h3>AGV机器人仿真</h3>
+          <button class="toggle-button" @click="togglePanel">
+            <span v-if="panelExpanded">▼</span>
+            <span v-else>▶</span>
+          </button>
+        </div>
+        
+        <div class="panel-content" v-if="panelExpanded">
+          <div class="control-group">
+            <div class="mqtt-status" :class="{ connected: mqttConnected }">
+              <span class="status-indicator"></span>
+              <span>MQTT {{ mqttConnected ? '已连接' : '未连接' }}</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label>速度：</label>
+            <input type="range" min="0" max="1" step="0.01" v-model.number="speed" />
+            <span>{{ Number(speed).toFixed(2) }}</span>
+          </div>
+          <div class="control-group">
+            <div class="button-group">
+              <button @click="moveForward">前进</button>
+              <button @click="moveBackward">后退</button>
+              <button @click="turnLeft">左转</button>
+              <button @click="turnRight">右转</button>
+              <button @click="resetPosition">重置</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <h4>MQTT测试</h4>
+            <div class="button-group">
+              <button @click="testMqttForward">前进</button>
+              <button @click="testMqttBackward">后退</button>
+              <button @click="testMqttLeft">左转</button>
+              <button @click="testMqttRight">右转</button>
+              <button @click="testMqttStop">停止</button>
+              <button @click="testMqttReset">重置</button>
+            </div>
+            <button @click="clearMqttMessages" style="background-color: #666;">清空日志</button>
+          </div>
+          <div class="control-group mqtt-logs">
+            <h4>MQTT指令日志</h4>
+            <div class="logs-container">
+              <div v-for="(msg, index) in mqttMessages" :key="index" class="log-item">
+                <div class="log-time">{{ msg.time }}</div>
+                <div class="log-content">{{ msg.content }}</div>
+              </div>
+              <div v-if="mqttMessages.length === 0" class="log-empty">暂无指令</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-</template>
+  </template>
 
 <script>
 import * as THREE from 'three';
@@ -25,6 +64,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { AnimationMixer } from 'three';
 import mqtt from 'mqtt';
+import { getPoints, getLocations } from "@/api/scheduler/map";
+import { listVehicles } from "@/api/scheduler/vehicles";
 
 export default {
   name: 'RobotSimulation',
@@ -51,7 +92,11 @@ export default {
       // MQTT相关
       mqttClient: null,
       mqttConnected: false,
-      mqttTopic: 'vehicle/control'
+      mqttTopic: 'vehicle/control',
+      // MQTT指令日志
+      mqttMessages: [],
+      // 面板状态
+      panelExpanded: true
     };
   },
   mounted() {
@@ -80,28 +125,40 @@ export default {
     // MQTT初始化
     initMqtt() {
       try {
-        // 连接到MQTT broker
-        this.mqttClient = mqtt.connect('ws://localhost:8083/mqtt');
+        // 连接到本地MQTT broker
+        console.log('Attempting to connect to local MQTT broker at ws://localhost:8083/mqtt');
+        this.mqttClient = mqtt.connect({
+          host: 'localhost',
+          port: 8083,
+          protocol: 'ws',
+          path: '/mqtt',
+          clientId: 'robot-simulation-' + Math.random().toString(16).substr(2, 8),
+          keepalive: 60,
+          reconnectPeriod: 1000,
+          connectTimeout: 5000,
+          clean: true
+        });
         
         // 监听连接事件
-        this.mqttClient.on('connect', () => {
-          console.log('MQTT connected');
+        this.mqttClient.on('connect', (connack) => {
+          console.log('MQTT connected successfully:', connack);
           this.mqttConnected = true;
           // 订阅主题
-          this.mqttClient.subscribe(this.mqttTopic, (err) => {
+          this.mqttClient.subscribe(this.mqttTopic, (err, granted) => {
             if (err) {
               console.error('Failed to subscribe to MQTT topic:', err);
             } else {
-              console.log('Subscribed to MQTT topic:', this.mqttTopic);
+              console.log('Subscribed to MQTT topic:', this.mqttTopic, 'granted:', granted);
             }
           });
         });
         
         // 监听消息事件
-        this.mqttClient.on('message', (topic, message) => {
+        this.mqttClient.on('message', (topic, message, packet) => {
           console.log('Received MQTT message:', {
             topic,
-            message: message.toString()
+            message: message.toString(),
+            packet
           });
           this.handleMqttMessage(message.toString());
         });
@@ -109,6 +166,7 @@ export default {
         // 监听错误事件
         this.mqttClient.on('error', (err) => {
           console.error('MQTT error:', err);
+          console.error('Error stack:', err.stack);
           this.mqttConnected = false;
         });
         
@@ -118,50 +176,123 @@ export default {
           this.mqttConnected = false;
         });
         
+        // 监听重连事件
+        this.mqttClient.on('reconnect', () => {
+          console.log('MQTT reconnecting...');
+        });
+        
+        // 监听离线事件
+        this.mqttClient.on('offline', () => {
+          console.log('MQTT offline');
+          this.mqttConnected = false;
+        });
+        
+        // 监听结束事件
+        this.mqttClient.on('end', () => {
+          console.log('MQTT connection ended');
+          this.mqttConnected = false;
+        });
+        
       } catch (error) {
         console.error('Failed to initialize MQTT:', error);
+        console.error('Error stack:', error.stack);
       }
     },
     
     // 处理MQTT消息
     handleMqttMessage(message) {
+      console.log('=== MQTT MESSAGE RECEIVED ===');
+      console.log('Raw message:', message);
+      
+      // 添加到指令日志
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString();
+      this.addMqttMessage(`[接收] ${timeStr}: ${message}`);
+      
       try {
         // 解析JSON消息
         const command = JSON.parse(message);
+        console.log('Parsed command:', command);
         
         // 检查消息格式
         if (!command || !command.command) {
           console.error('Invalid MQTT message format:', message);
+          this.addMqttMessage(`[错误] ${timeStr}: 无效消息格式`);
           return;
         }
+        
+        console.log('Executing command:', command.command);
+        this.addMqttMessage(`[执行] ${timeStr}: ${command.command}`);
         
         // 根据指令类型执行相应的操作
         switch (command.command) {
           case 'forward':
+            console.log('Executing forward command');
             this.moveForward();
             break;
           case 'backward':
+            console.log('Executing backward command');
             this.moveBackward();
             break;
           case 'left':
+            console.log('Executing left command');
             this.turnLeft();
             break;
           case 'right':
+            console.log('Executing right command');
             this.turnRight();
             break;
           case 'stop':
+            console.log('Executing stop command');
             this.stopMovement();
             break;
           case 'reset':
+            console.log('Executing reset command');
             this.resetPosition();
             break;
           default:
             console.warn('Unknown command:', command.command);
+            this.addMqttMessage(`[警告] ${timeStr}: 未知指令 ${command.command}`);
         }
+        
+        console.log('=== MQTT MESSAGE PROCESSED ===');
         
       } catch (error) {
         console.error('Failed to parse MQTT message:', error);
+        console.error('Error parsing message:', message);
+        this.addMqttMessage(`[错误] ${timeStr}: 解析失败 - ${error.message}`);
       }
+    },
+    
+    // 添加MQTT消息到日志
+    addMqttMessage(content) {
+      this.mqttMessages.push({
+        time: new Date().toLocaleTimeString(),
+        content: content
+      });
+      
+      // 保持日志数量在合理范围（最多20条）
+      if (this.mqttMessages.length > 20) {
+        this.mqttMessages.shift();
+      }
+      
+      // 自动滚动到底部
+      this.$nextTick(() => {
+        const logsContainer = document.querySelector('.logs-container');
+        if (logsContainer) {
+          logsContainer.scrollTop = logsContainer.scrollHeight;
+        }
+      });
+    },
+    
+    // 清空MQTT日志
+    clearMqttMessages() {
+      this.mqttMessages = [];
+    },
+    
+    // 切换面板展开/折叠状态
+    togglePanel() {
+      this.panelExpanded = !this.panelExpanded;
     },
     
     // 断开MQTT连接
@@ -212,8 +343,8 @@ export default {
       this.controls = new OrbitControls(this.camera, this.renderer.domElement);
       this.controls.enableDamping = true;
       this.controls.dampingFactor = 0.05;
-      this.controls.minDistance = 2;
-      this.controls.maxDistance = 20;
+      this.controls.minDistance = 0.1;
+      this.controls.maxDistance = Infinity;
     },
     
     initLights() {
@@ -520,6 +651,109 @@ export default {
       }
     },
     
+    // MQTT测试方法
+    testMqttForward() {
+      if (this.mqttClient && this.mqttConnected) {
+        const message = JSON.stringify({ vehicleId: 'test-vehicle', command: 'forward' });
+        console.log('Sending test MQTT message:', message);
+        // 添加到指令日志
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[发送] ${timeStr}: ${message}`);
+        this.mqttClient.publish(this.mqttTopic, message, { qos: 0, retain: false });
+      } else {
+        console.error('MQTT not connected');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[错误] ${timeStr}: MQTT未连接，无法发送消息`);
+      }
+    },
+    
+    testMqttBackward() {
+      if (this.mqttClient && this.mqttConnected) {
+        const message = JSON.stringify({ vehicleId: 'test-vehicle', command: 'backward' });
+        console.log('Sending test MQTT message:', message);
+        // 添加到指令日志
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[发送] ${timeStr}: ${message}`);
+        this.mqttClient.publish(this.mqttTopic, message, { qos: 0, retain: false });
+      } else {
+        console.error('MQTT not connected');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[错误] ${timeStr}: MQTT未连接，无法发送消息`);
+      }
+    },
+    
+    testMqttLeft() {
+      if (this.mqttClient && this.mqttConnected) {
+        const message = JSON.stringify({ vehicleId: 'test-vehicle', command: 'left' });
+        console.log('Sending test MQTT message:', message);
+        // 添加到指令日志
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[发送] ${timeStr}: ${message}`);
+        this.mqttClient.publish(this.mqttTopic, message, { qos: 0, retain: false });
+      } else {
+        console.error('MQTT not connected');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[错误] ${timeStr}: MQTT未连接，无法发送消息`);
+      }
+    },
+    
+    testMqttRight() {
+      if (this.mqttClient && this.mqttConnected) {
+        const message = JSON.stringify({ vehicleId: 'test-vehicle', command: 'right' });
+        console.log('Sending test MQTT message:', message);
+        // 添加到指令日志
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[发送] ${timeStr}: ${message}`);
+        this.mqttClient.publish(this.mqttTopic, message, { qos: 0, retain: false });
+      } else {
+        console.error('MQTT not connected');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[错误] ${timeStr}: MQTT未连接，无法发送消息`);
+      }
+    },
+    
+    testMqttStop() {
+      if (this.mqttClient && this.mqttConnected) {
+        const message = JSON.stringify({ vehicleId: 'test-vehicle', command: 'stop' });
+        console.log('Sending test MQTT message:', message);
+        // 添加到指令日志
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[发送] ${timeStr}: ${message}`);
+        this.mqttClient.publish(this.mqttTopic, message, { qos: 0, retain: false });
+      } else {
+        console.error('MQTT not connected');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[错误] ${timeStr}: MQTT未连接，无法发送消息`);
+      }
+    },
+    
+    testMqttReset() {
+      if (this.mqttClient && this.mqttConnected) {
+        const message = JSON.stringify({ vehicleId: 'test-vehicle', command: 'reset' });
+        console.log('Sending test MQTT message:', message);
+        // 添加到指令日志
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[发送] ${timeStr}: ${message}`);
+        this.mqttClient.publish(this.mqttTopic, message, { qos: 0, retain: false });
+      } else {
+        console.error('MQTT not connected');
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString();
+        this.addMqttMessage(`[错误] ${timeStr}: MQTT未连接，无法发送消息`);
+      }
+    },
+    
     onWindowResize() {
       const container = document.getElementById('container');
       if (this.camera && this.renderer) {
@@ -573,53 +807,116 @@ export default {
   position: absolute;
   top: 20px;
   left: 20px;
-  background-color: rgba(255, 255, 255, 0.8);
-  padding: 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 15px;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   z-index: 100;
-  min-width: 250px;
+  min-width: 360px;
+  max-width: 440px;
+  transition: all 0.3s ease;
+  overflow: hidden;
 }
 
-.controls h3 {
-  margin: 0 0 15px 0;
+/* 折叠状态 */
+.controls.collapsed {
+  min-width: auto;
+  max-width: auto;
+  padding: 10px 15px;
+}
+
+/* 面板头部 */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.panel-header h3 {
+  margin: 0;
   color: #333;
-  font-size: 18px;
+  font-size: 16px;
+  flex: 1;
+  text-align: center;
+}
+
+/* 切换按钮 */
+.toggle-button {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  min-width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #333;
+}
+
+.toggle-button:active {
+  transform: scale(0.95);
+}
+
+/* 面板内容 */
+.panel-content {
+  transition: all 0.3s ease;
+}
+
+/* 折叠状态下的面板内容 */
+.controls.collapsed .panel-content {
+  display: none;
 }
 
 .control-group {
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
 .control-group label {
-  display: inline-block;
-  width: 60px;
-  font-size: 14px;
+  display: block;
+  width: 100%;
+  font-size: 13px;
   color: #666;
+  margin-bottom: 6px;
 }
 
 .control-group input[type="range"] {
-  width: 120px;
-  margin: 0 10px;
+  width: calc(100% - 60px);
+  margin: 0;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .control-group span {
   display: inline-block;
+  font-size: 13px;
+  color: #333;
   width: 40px;
   text-align: right;
-  font-size: 14px;
-  color: #333;
+  vertical-align: middle;
+  margin-left: 10px;
 }
 
 .control-group button {
-  margin-right: 10px;
-  padding: 6px 12px;
+  margin: 0 4px 6px 0;
+  padding: 5px 10px;
   background-color: #409eff;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
+  min-width: 60px;
+  display: inline-block;
 }
 
 .control-group button:hover {
@@ -629,5 +926,144 @@ export default {
 .control-group button:disabled {
   background-color: #c0c4cc;
   cursor: not-allowed;
+}
+
+/* 按钮容器 */
+.control-group .button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+/* 测试按钮样式 */
+.control-group button[style*="background-color: #666"] {
+  width: 100%;
+  margin: 8px 0 0 0;
+  min-width: auto;
+}
+
+/* MQTT状态样式 */
+.mqtt-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #666;
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #ff4d4f;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 4px rgba(255, 77, 79, 0.5);
+}
+
+.mqtt-status.connected .status-indicator {
+  background-color: #52c41a;
+  box-shadow: 0 0 4px rgba(82, 196, 26, 0.5);
+}
+
+.mqtt-status.connected {
+  color: #52c41a;
+}
+
+/* MQTT日志样式 */
+.mqtt-logs {
+  margin-top: 15px;
+  background-color: rgba(0, 0, 0, 0.03);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.mqtt-logs h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+.logs-container {
+  max-height: 200px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.log-item {
+  margin-bottom: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.log-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.log-time {
+  color: #999;
+  margin-right: 8px;
+  font-size: 11px;
+}
+
+.log-content {
+  color: #333;
+  word-break: break-all;
+}
+
+.log-empty {
+  color: #999;
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
+/* 滚动条样式 */
+.logs-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.logs-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.logs-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.logs-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* 日志内容颜色 */
+.log-content:contains('[接收]') {
+  color: #1890ff;
+}
+
+.log-content:contains('[发送]') {
+  color: #52c41a;
+}
+
+.log-content:contains('[执行]') {
+  color: #faad14;
+}
+
+.log-content:contains('[错误]') {
+  color: #ff4d4f;
+}
+
+.log-content:contains('[警告]') {
+  color: #fa8c16;
 }
 </style>
