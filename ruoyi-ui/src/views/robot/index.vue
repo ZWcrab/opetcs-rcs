@@ -87,8 +87,11 @@ export default {
       targetRotation: 0,
       isTurning: false,
       turnFinishDirection: null, // 转向完成后要移动的方向
+      // 目标位置管理
+      targetPosition: null,
+      isMovingToTarget: false,
       // 边界设置
-      boundary: 8, // 边界大小，AGV不能超出±8的范围
+      boundary: 32, // 边界大小，AGV不能超出±32的范围
       // MQTT相关
       mqttClient: null,
       mqttConnected: false,
@@ -96,12 +99,20 @@ export default {
       // MQTT指令日志
       mqttMessages: [],
       // 面板状态
-      panelExpanded: true
+      panelExpanded: true,
+      // 点位数据
+      points: [],
+      pointObjects: [],
+      // 车辆数据
+      vehicles: [],
+      vehicleObjects: []
     };
   },
   mounted() {
     this.init();
     this.initMqtt();
+    this.loadPoints();
+    this.loadAGVModel();
   },
   beforeDestroy() {
     this.dispose();
@@ -116,10 +127,363 @@ export default {
       this.initControls();
       this.initLights();
       this.initFloor();
-      this.loadAGVModel();
       this.animate();
       
       window.addEventListener('resize', this.onWindowResize);
+      
+      // 初始化时将车辆重置到对应的point点位
+      this.$nextTick(async () => {
+        await this.resetPosition();
+      });
+    },
+    
+    // 加载点位数据
+    async loadPoints() {
+      try {
+        const response = await getPoints();
+        this.points = response.data || response.rows || [];
+        this.createPoints();
+        // 重新加载车辆，确保车辆在新的点位上
+        this.createVehicles();
+      } catch (error) {
+        console.error('加载点位数据失败:', error);
+      }
+    },
+    
+    // 加载车辆数据
+    async loadVehicles() {
+      try {
+        const response = await listVehicles();
+        this.vehicles = response.rows || [];
+        this.createVehicles();
+      } catch (error) {
+        console.error('加载车辆数据失败:', error);
+      }
+    },
+    
+    // 创建车辆
+    createVehicles() {
+      // 清除现有车辆
+      this.vehicleObjects.forEach(obj => {
+        if (this.scene) {
+          this.scene.remove(obj);
+        }
+      });
+      this.vehicleObjects = [];
+      
+      if (this.vehicles.length === 0 || this.points.length === 0) {
+        return;
+      }
+      
+      // 计算点位数据的范围，用于归一化车辆位置
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      
+      this.points.forEach(point => {
+        const x = point.pose && point.pose.position ? point.pose.position.x : point.x || 0;
+        const y = point.pose && point.pose.position ? point.pose.position.y : point.y || 0;
+        
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+      
+      // 归一化车辆位置到80x80的地板范围内
+      const floorSize = 80;
+      const padding = 2;
+      const availableSize = floorSize - padding * 2;
+      
+      const scaleX = availableSize / (maxX - minX || 1);
+      const scaleY = availableSize / (maxY - minY || 1);
+      const scaleFactor = Math.min(scaleX, scaleY);
+      
+      const offsetX = -((minX + maxX) / 2) * scaleFactor;
+      const offsetY = -((minY + maxY) / 2) * scaleFactor;
+      
+      // 创建车辆
+      this.vehicles.forEach(vehicle => {
+        // 找到车辆对应的point
+        const currentPoint = this.points.find(point => point.name === vehicle.currentPosition);
+        if (currentPoint) {
+          const rawX = (currentPoint.pose && currentPoint.pose.position ? currentPoint.pose.position.x : currentPoint.x || 0);
+          const rawZ = (currentPoint.pose && currentPoint.pose.position ? currentPoint.pose.position.y : currentPoint.y || 0);
+          
+          // 归一化车辆位置
+          const x = rawX * scaleFactor + offsetX;
+          const z = rawZ * scaleFactor + offsetY;
+          
+          // 创建车辆模型
+          const vehicleGroup = this.createVehicleModel();
+          vehicleGroup.position.set(x, 0.5, z);
+          
+          // 设置车辆模型的渲染顺序，确保它显示在前面
+          vehicleGroup.traverse((obj) => {
+            if (obj.isMesh) {
+              obj.renderOrder = 1;
+            }
+          });
+          
+          // 添加车辆标签
+          const label = this.createLabel(vehicle.name, x, 2, z);
+          
+          this.scene.add(vehicleGroup);
+          this.scene.add(label);
+          
+          this.vehicleObjects.push(vehicleGroup);
+          this.vehicleObjects.push(label);
+        }
+      });
+    },
+    
+    // 创建车辆模型
+    createVehicleModel() {
+      // 创建AGV主体
+      const agvGroup = new THREE.Group();
+      
+      // AGV底盘
+      const chassisGeometry = new THREE.BoxGeometry(1.5, 0.3, 2.5);
+      const chassisMaterial = new THREE.MeshStandardMaterial({ color: 0x0066cc });
+      const chassis = new THREE.Mesh(chassisGeometry, chassisMaterial);
+      chassis.castShadow = true;
+      chassis.receiveShadow = true;
+      agvGroup.add(chassis);
+      
+      // AGV顶部
+      const topGeometry = new THREE.BoxGeometry(1.3, 0.2, 2.3);
+      const topMaterial = new THREE.MeshStandardMaterial({ color: 0x0088ff });
+      const top = new THREE.Mesh(topGeometry, topMaterial);
+      top.position.y = 0.25;
+      top.castShadow = true;
+      top.receiveShadow = true;
+      agvGroup.add(top);
+      
+      // 车轮 - 前左
+      const wheelGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.15, 16);
+      const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+      
+      const frontLeftWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+      frontLeftWheel.rotation.z = Math.PI / 2;
+      frontLeftWheel.position.set(-0.8, 0.15, 1.0);
+      frontLeftWheel.castShadow = true;
+      agvGroup.add(frontLeftWheel);
+      
+      // 车轮 - 前右
+      const frontRightWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+      frontRightWheel.rotation.z = Math.PI / 2;
+      frontRightWheel.position.set(0.8, 0.15, 1.0);
+      frontRightWheel.castShadow = true;
+      agvGroup.add(frontRightWheel);
+      
+      // 车轮 - 后左
+      const rearLeftWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+      rearLeftWheel.rotation.z = Math.PI / 2;
+      rearLeftWheel.position.set(-0.8, 0.15, -1.0);
+      rearLeftWheel.castShadow = true;
+      agvGroup.add(rearLeftWheel);
+      
+      // 车轮 - 后右
+      const rearRightWheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+      rearRightWheel.rotation.z = Math.PI / 2;
+      rearRightWheel.position.set(0.8, 0.15, -1.0);
+      rearRightWheel.castShadow = true;
+      agvGroup.add(rearRightWheel);
+      
+      // 顶部天线
+      const antennaGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
+      const antennaMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+      const antenna = new THREE.Mesh(antennaGeometry, antennaMaterial);
+      antenna.position.set(0, 0.5, 0);
+      antenna.castShadow = true;
+      agvGroup.add(antenna);
+      
+      // 添加车头标记 - 前部红色箭头
+      const arrowGeometry = new THREE.ConeGeometry(0.15, 0.3, 8);
+      const arrowMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+      const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial);
+      arrow.position.set(0, 0.4, 1.3); // 位于AGV顶部前端
+      arrow.rotation.x = Math.PI / 2; // 指向正前方
+      arrow.castShadow = true;
+      agvGroup.add(arrow);
+      
+      return agvGroup;
+    },
+    
+    // 移动到指定点位
+    moveToPoint(pointName) {
+      if (!this.agvModel || this.points.length === 0) {
+        return;
+      }
+      
+      // 找到目标点位
+      const targetPoint = this.points.find(point => point.name === pointName);
+      if (!targetPoint) {
+        console.error('Target point not found:', pointName);
+        return;
+      }
+      
+      // 计算点位数据的范围，用于归一化目标位置
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      
+      this.points.forEach(point => {
+        const x = point.pose && point.pose.position ? point.pose.position.x : point.x || 0;
+        const y = point.pose && point.pose.position ? point.pose.position.y : point.y || 0;
+        
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+      
+      // 归一化目标位置到80x80的地板范围内
+      const floorSize = 80;
+      const padding = 2;
+      const availableSize = floorSize - padding * 2;
+      
+      const scaleX = availableSize / (maxX - minX || 1);
+      const scaleY = availableSize / (maxY - minY || 1);
+      const scaleFactor = Math.min(scaleX, scaleY);
+      
+      const offsetX = -((minX + maxX) / 2) * scaleFactor;
+      const offsetY = -((minY + maxY) / 2) * scaleFactor;
+      
+      // 计算目标位置
+      const rawX = (targetPoint.pose && targetPoint.pose.position ? targetPoint.pose.position.x : targetPoint.x || 0);
+      const rawZ = (targetPoint.pose && targetPoint.pose.position ? targetPoint.pose.position.y : targetPoint.y || 0);
+      
+      const targetX = rawX * scaleFactor + offsetX;
+      const targetZ = rawZ * scaleFactor + offsetY;
+      
+      // 设置目标位置
+      this.targetPosition = { x: targetX, z: targetZ };
+      this.isMovingToTarget = true;
+      this.isMoving = true;
+    },
+    
+    // 创建点位
+    createPoints() {
+      // 清除现有点位
+      this.pointObjects.forEach(obj => {
+        if (this.scene) {
+          this.scene.remove(obj);
+        }
+      });
+      this.pointObjects = [];
+      
+      if (this.points.length === 0) {
+        return;
+      }
+      
+      // 计算点位数据的范围
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      
+      this.points.forEach(point => {
+        const x = point.pose && point.pose.position ? point.pose.position.x : point.x || 0;
+        const y = point.pose && point.pose.position ? point.pose.position.y : point.y || 0;
+        
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      });
+      
+      // 归一化点位数据到80x80的地板范围内
+      const floorSize = 80;
+      const padding = 2; // 留出边距
+      const availableSize = floorSize - padding * 2;
+      
+      // 计算缩放比例和偏移量
+      const scaleX = availableSize / (maxX - minX || 1);
+      const scaleY = availableSize / (maxY - minY || 1);
+      const scaleFactor = Math.min(scaleX, scaleY); // 使用较小的缩放比例，确保所有点位都能放下
+      
+      const offsetX = -((minX + maxX) / 2) * scaleFactor;
+      const offsetY = -((minY + maxY) / 2) * scaleFactor;
+      
+      // 创建新点位
+      this.points.forEach(point => {
+        const rawX = (point.pose && point.pose.position ? point.pose.position.x : point.x || 0);
+        const rawZ = (point.pose && point.pose.position ? point.pose.position.y : point.y || 0);
+        
+        // 归一化并缩放点位坐标
+        const x = rawX * scaleFactor + offsetX;
+        const y = 0.5;
+        const z = rawZ * scaleFactor + offsetY;
+        
+        // 点的几何体
+        const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+        let material = new THREE.MeshStandardMaterial({ 
+          color: 0x64748b,
+          roughness: 0.5,
+          metalness: 0.5
+        });
+        
+        // 根据点类型设置不同颜色
+        if (point.name && point.name.includes('Point-')) {
+          material = new THREE.MeshStandardMaterial({ 
+            color: 0x3b82f6,
+            roughness: 0.3,
+            metalness: 0.7
+          });
+        }
+        
+        const pointMesh = new THREE.Mesh(geometry, material);
+        pointMesh.position.set(x, y, z);
+        pointMesh.castShadow = true;
+        pointMesh.receiveShadow = true;
+        // 设置点位模型的渲染顺序，确保它显示在车辆后面
+        pointMesh.renderOrder = 0;
+        
+        // 添加标签
+        const label = this.createLabel(point.name || point.id || 'Point', x, y + 0.8, z);
+        
+        this.scene.add(pointMesh);
+        this.scene.add(label);
+        
+        this.pointObjects.push(pointMesh);
+        this.pointObjects.push(label);
+      });
+    },
+    
+    // 创建标签
+    createLabel(text, x, y, z) {
+      // 创建更大的文字标签，提高可见性
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.width = 256; // 画布尺寸
+      canvas.height = 64;
+      
+      // 背景
+      context.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // 边框
+      context.strokeStyle = '#3b82f6';
+      context.lineWidth = 2;
+      context.strokeRect(0, 0, canvas.width, canvas.height);
+      
+      // 文字
+      context.fillStyle = '#ffffff';
+      context.font = 'bold 24px Arial';
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(text, canvas.width / 2, canvas.height / 2);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMaterial = new THREE.SpriteMaterial({ 
+        map: texture,
+        transparent: true
+      });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      sprite.position.set(x, y, z);
+      sprite.scale.set(5, 1.25, 1);
+      
+      // 始终面向相机
+      sprite.lookAt(this.camera.position);
+      
+      return sprite;
     },
     
     // MQTT初始化
@@ -250,6 +614,15 @@ export default {
             console.log('Executing reset command');
             this.resetPosition();
             break;
+          case 'move':
+            console.log('Executing move command');
+            if (command.destination) {
+              this.moveToPoint(command.destination);
+            } else {
+              console.error('Missing destination in move command');
+              this.addMqttMessage(`[错误] ${timeStr}: 移动指令缺少目标点位`);
+            }
+            break;
           default:
             console.warn('Unknown command:', command.command);
             this.addMqttMessage(`[警告] ${timeStr}: 未知指令 ${command.command}`);
@@ -326,7 +699,8 @@ export default {
         0.1,
         1000
       );
-      this.camera.position.set(5, 5, 5);
+      // 调整摄像头位置，使其能够看到整个80x80的地板
+      this.camera.position.set(60, 60, 60);
       this.camera.lookAt(0, 0, 0);
     },
     
@@ -367,7 +741,8 @@ export default {
     },
     
     initFloor() {
-      const floorGeometry = new THREE.PlaneGeometry(20, 20);
+      // 将地板扩大至当前的两倍（80x80）
+      const floorGeometry = new THREE.PlaneGeometry(80, 80);
       const floorMaterial = new THREE.MeshStandardMaterial({
         color: 0x808080,
         roughness: 0.8,
@@ -378,8 +753,8 @@ export default {
       floor.receiveShadow = true;
       this.scene.add(floor);
       
-      // 添加网格辅助线
-      const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x888888);
+      // 添加网格辅助线，同样扩大至80x80
+      const gridHelper = new THREE.GridHelper(80, 80, 0x444444, 0x888888);
       this.scene.add(gridHelper);
     },
     
@@ -487,6 +862,12 @@ export default {
       
       this.agvModel = agvGroup;
       this.agvModel.position.set(0, 0, 0);
+      // 设置车辆模型的渲染顺序，确保它始终显示在前面
+      this.agvModel.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.renderOrder = 1;
+        }
+      });
       this.scene.add(this.agvModel);
       
       // 为默认模型创建简单的旋转动画
@@ -525,10 +906,63 @@ export default {
         }
       }
       
-      // 处理移动逻辑
-      if (this.isMoving && this.agvModel && !this.isTurning) {
+      // 处理移动到目标位置的逻辑
+      if (this.isMovingToTarget && this.agvModel && this.targetPosition) {
+        const moveSpeed = 4.0 * speedValue;
+        
+        // 计算当前位置到目标位置的方向
+        const direction = new THREE.Vector2(
+          this.targetPosition.x - this.agvModel.position.x,
+          this.targetPosition.z - this.agvModel.position.z
+        );
+        
+        const distance = direction.length();
+        
+        // 检查是否到达目标位置
+        if (distance < 0.1) {
+          // 到达目标位置，停止移动
+          this.agvModel.position.set(this.targetPosition.x, this.agvModel.position.y, this.targetPosition.z);
+          this.isMovingToTarget = false;
+          this.isMoving = false;
+          this.targetPosition = null;
+          console.log('Reached target position');
+        } else {
+          // 继续移动
+          direction.normalize();
+          
+          // 计算目标朝向
+          const targetRotation = Math.atan2(direction.x, direction.y);
+          const rotationSpeed = 2.0 * speedValue;
+          const angleDiff = targetRotation - this.agvModel.rotation.y;
+          
+          // 平滑转向
+          if (Math.abs(angleDiff) > 0.01) {
+            const rotationAmount = Math.sign(angleDiff) * rotationSpeed * delta;
+            this.agvModel.rotation.y += rotationAmount;
+          } else {
+            this.agvModel.rotation.y = targetRotation;
+          }
+          
+          // 向前移动
+          this.agvModel.position.x += Math.sin(this.agvModel.rotation.y) * moveSpeed * delta;
+          this.agvModel.position.z += Math.cos(this.agvModel.rotation.y) * moveSpeed * delta;
+          
+          // 边界检测
+          if (Math.abs(this.agvModel.position.x) > this.boundary || Math.abs(this.agvModel.position.z) > this.boundary) {
+            // 超出边界，停止移动
+            this.isMovingToTarget = false;
+            this.isMoving = false;
+            this.targetPosition = null;
+            // 将AGV拉回边界内
+            this.agvModel.position.x = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.x));
+            this.agvModel.position.z = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.z));
+          }
+        }
+      } 
+      // 处理手动移动逻辑
+      else if (this.isMoving && this.agvModel && !this.isTurning) {
         console.log('AGV is moving in direction:', this.moveDirection);
-        const moveSpeed = 2.0 * speedValue;
+        const moveSpeed = 4.0 * speedValue;
         let moved = false;
         
         switch (this.moveDirection) {
@@ -640,12 +1074,84 @@ export default {
       }
     },
     
-    resetPosition() {
-      if (this.agvModel) {
-        this.isMoving = false;
-        this.isTurning = false;
-        this.moveDirection = null;
-        this.turnFinishDirection = null;
+    // 重置车辆位置
+    async resetPosition() {
+      if (!this.agvModel) {
+        return;
+      }
+      
+      // 停止所有移动
+      this.isMoving = false;
+      this.isTurning = false;
+      this.moveDirection = null;
+      this.turnFinishDirection = null;
+      this.isMovingToTarget = false;
+      this.targetPosition = null;
+      
+      try {
+        // 获取车辆位置信息
+        const response = await listVehicles();
+        this.vehicles = response.rows || [];
+        
+        if (this.vehicles.length > 0 && this.points.length > 0) {
+          // 获取第一个车辆
+          const vehicle = this.vehicles[0];
+          // 找到对应的point
+          const currentPoint = this.points.find(point => point.name === vehicle.currentPosition);
+          
+          if (currentPoint) {
+            // 计算点位数据的范围，用于归一化位置
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            
+            this.points.forEach(point => {
+              const x = point.pose && point.pose.position ? point.pose.position.x : point.x || 0;
+              const y = point.pose && point.pose.position ? point.pose.position.y : point.y || 0;
+              
+              minX = Math.min(minX, x);
+              maxX = Math.max(maxX, x);
+              minY = Math.min(minY, y);
+              maxY = Math.max(maxY, y);
+            });
+            
+            // 归一化位置到80x80的地板范围内
+            const floorSize = 80;
+            const padding = 2;
+            const availableSize = floorSize - padding * 2;
+            
+            const scaleX = availableSize / (maxX - minX || 1);
+            const scaleY = availableSize / (maxY - minY || 1);
+            const scaleFactor = Math.min(scaleX, scaleY);
+            
+            const offsetX = -((minX + maxX) / 2) * scaleFactor;
+            const offsetY = -((minY + maxY) / 2) * scaleFactor;
+            
+            // 计算车辆位置
+            const rawX = (currentPoint.pose && currentPoint.pose.position ? currentPoint.pose.position.x : currentPoint.x || 0);
+            const rawZ = (currentPoint.pose && currentPoint.pose.position ? currentPoint.pose.position.y : currentPoint.y || 0);
+            
+            const x = rawX * scaleFactor + offsetX;
+            const z = rawZ * scaleFactor + offsetY;
+            
+            // 将车辆重置到对应的point位置
+            this.agvModel.position.set(x, this.agvModel.position.y, z);
+            this.agvModel.rotation.set(0, 0, 0);
+            console.log('Vehicle reset to position:', { x, z });
+          } else {
+            // 如果找不到对应的point，重置到原点
+            this.agvModel.position.set(0, 0, 0);
+            this.agvModel.rotation.set(0, 0, 0);
+            console.log('Vehicle reset to origin, no current point found');
+          }
+        } else {
+          // 如果没有车辆数据或点位数据，重置到原点
+          this.agvModel.position.set(0, 0, 0);
+          this.agvModel.rotation.set(0, 0, 0);
+          console.log('Vehicle reset to origin, no vehicles or points data');
+        }
+      } catch (error) {
+        console.error('Failed to reset vehicle position:', error);
+        // 重置失败时，重置到原点
         this.agvModel.position.set(0, 0, 0);
         this.agvModel.rotation.set(0, 0, 0);
       }
