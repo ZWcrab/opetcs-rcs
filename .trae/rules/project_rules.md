@@ -1,0 +1,29 @@
+# 项目框架
+RuoYi低代码平台 文档：https://doc.ruoyi.vip/
+后端为 java，前端为 vue3，数据库为 mysql，缓存为 redis，web3D 为 three.js
+
+# 项目结构
+com.ruoyi     
+├── common            // 工具类
+│       └── annotation                    // 自定义注解
+│       └── config                        // 全局配置
+│       └── constant                      // 通用常量
+│       └── core                          // 核心控制
+│       └── enums                         // 通用枚举
+│       └── exception                     // 通用异常
+│       └── json                          // JSON数据处理
+│       └── utils                         // 通用类处理
+│       └── xss                           // XSS过滤处理
+├── framework         // 框架核心
+│       └── aspectj                       // 注解实现
+│       └── config                        // 系统配置
+│       └── datasource                    // 数据权限
+│       └── interceptor                   // 拦截器
+│       └── manager                       // 异步处理
+│       └── shiro                         // 权限控制
+│       └── web                           // 前端控制
+├── ruoyi-generator   // 代码生成（不用可移除）
+├── ruoyi-quartz      // 定时任务（不用可移除）
+├── ruoyi-system      // 系统代码
+├── ruoyi-admin       // 后台服务
+├── ruoyi-ui      // 前端模块

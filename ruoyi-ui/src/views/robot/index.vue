@@ -986,15 +986,15 @@ export default {
               this.agvModel.position.z += Math.cos(this.agvModel.rotation.y) * moveSpeed * delta;
 
               // 边界检测
-              if (Math.abs(this.agvModel.position.x) > this.boundary || Math.abs(this.agvModel.position.z) > this.boundary) {
-                // 超出边界，停止移动
-                this.isMovingToTarget = false;
-                this.isMoving = false;
-                this.targetPosition = null;
-                // 将AGV拉回边界内
-                this.agvModel.position.x = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.x));
-                this.agvModel.position.z = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.z));
-              }
+              // if (Math.abs(this.agvModel.position.x) > this.boundary || Math.abs(this.agvModel.position.z) > this.boundary) {
+              //   // 超出边界，停止移动
+              //   this.isMovingToTarget = false;
+              //   this.isMoving = false;
+              //   this.targetPosition = null;
+              //   // 将AGV拉回边界内
+              //   this.agvModel.position.x = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.x));
+              //   this.agvModel.position.z = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.z));
+              // }
             }
           }
         }
@@ -1027,17 +1027,17 @@ export default {
             break;
         }
 
-        if (moved) {
-          // 边界检测
-          if (Math.abs(this.agvModel.position.x) > this.boundary || Math.abs(this.agvModel.position.z) > this.boundary) {
-            // 超出边界，停止移动
-            this.isMoving = false;
-            this.moveDirection = null;
-            // 将AGV拉回边界内
-            this.agvModel.position.x = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.x));
-            this.agvModel.position.z = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.z));
-          }
-        }
+        // if (moved) {
+        //   // 边界检测
+        //   if (Math.abs(this.agvModel.position.x) > this.boundary || Math.abs(this.agvModel.position.z) > this.boundary) {
+        //     // 超出边界，停止移动
+        //     this.isMoving = false;
+        //     this.moveDirection = null;
+        //     // 将AGV拉回边界内
+        //     this.agvModel.position.x = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.x));
+        //     this.agvModel.position.z = Math.max(-this.boundary, Math.min(this.boundary, this.agvModel.position.z));
+        //   }
+        // }
       }
 
       if (this.controls) {

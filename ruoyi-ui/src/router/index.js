@@ -77,12 +77,31 @@ export const constantRoutes = [
   {
     path: '/robot',
     component: Layout,
+    meta: { title: '机器人管理', icon: 'robot' },
     children: [
       {
         path: 'index',
         component: () => import('@/views/robot/index'),
         name: 'RobotSimulation',
         meta: { title: 'AGV机器人仿真', icon: 'monitor', affix: false }
+      },
+      {
+        path: 'yahboom',
+        component: () => import('@/views/robot/yahboom'),
+        name: 'YahboomRobot',
+        meta: { title: 'Yahboom机器人控制', icon: 'guide', affix: false }
+      },
+      {
+        path: 'navigation',
+        component: () => import('@/views/robot/navigation'),
+        name: 'NavigationPlanning',
+        meta: { title: '导航规划', icon: 'location', affix: false }
+      },
+      {
+        path: 'quick-verify',
+        component: () => import('@/views/robot/quick-verify'),
+        name: 'QuickVerify',
+        meta: { title: '快速验证导航', icon: 'check', affix: false }
       }
     ]
   },
