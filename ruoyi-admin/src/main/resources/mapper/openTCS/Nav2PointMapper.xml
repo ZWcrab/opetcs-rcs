@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.web.mapper.Nav2PointMapper">
+
+    <!-- 保存导航点位 -->
+    <insert id="insertNav2Point" parameterType="com.ruoyi.web.model.entity.Nav2Point">
+        insert into tb_nav2_point (name, x_pos, y_pos)
+        values (#{name}, #{xPos}, #{yPos})
+    </insert>
+
+    <!-- 查询所有导航点位 -->
+    <select id="selectAllNav2Points" resultType="com.ruoyi.web.model.entity.Nav2Point">
+        select id, name, x_pos as xPos, y_pos as yPos
+        from tb_nav2_point
+        order by id desc
+    </select>
+
+</mapper>

@@ -722,3 +722,14 @@ CREATE TABLE `tb_transport_order`  (
                                        `finished_time` datetime NULL DEFAULT NULL,
                                        PRIMARY KEY (`id`) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
+
+DROP TABLE IF EXISTS `tb_nav2_point`;
+CREATE TABLE `tb_nav2_point`  (
+                                       `id` bigint NOT NULL AUTO_INCREMENT,
+                                       `x_pos` double NULL DEFAULT NULL,
+                                       `y_pos` double NULL DEFAULT NULL,
+                                       `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL,
+
+                                       PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci ROW_FORMAT = Dynamic;
+
