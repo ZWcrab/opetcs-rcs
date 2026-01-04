@@ -24,6 +24,11 @@ public class Nav2Point {
     private Double yPos;
 
     /**
+     * 朝向
+     */
+    private Double yaw;
+
+    /**
      * 点位名称
      */
     private String name;
@@ -58,5 +63,13 @@ public class Nav2Point {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public Double getYaw() {
+        return yaw;
+    }
+
+    public void setYaw(Double yaw) {
+        this.yaw = yaw;
     }
 }

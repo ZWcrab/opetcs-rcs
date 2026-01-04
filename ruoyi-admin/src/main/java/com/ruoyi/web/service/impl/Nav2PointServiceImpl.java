@@ -29,4 +29,9 @@ public class Nav2PointServiceImpl implements Nav2PointService {
     public List<Nav2Point> getAllNav2Points() {
         return nav2PointMapper.selectAllNav2Points();
     }
+    
+    @Override
+    public int deleteNav2Point(Long id) {
+        return nav2PointMapper.deleteNav2Point(id);
+    }
 }

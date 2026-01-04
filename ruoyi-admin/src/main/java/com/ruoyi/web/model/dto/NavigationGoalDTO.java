@@ -19,20 +19,44 @@ public class NavigationGoalDTO {
     @ApiModelProperty(value = "Z坐标")
     private Double z = 0.0;
 
-    @ApiModelProperty(value = "方向X")
+    @ApiModelProperty(value = "欧拉角Roll (绕X轴旋转，单位：弧度)")
+    private Double roll = 0.0;
+
+    @ApiModelProperty(value = "欧拉角Pitch (绕Y轴旋转，单位：弧度)")
+    private Double pitch = 0.0;
+
+    @ApiModelProperty(value = "欧拉角Yaw (绕Z轴旋转，单位：弧度)")
+    private Double yaw = 0.0;
+
+    @ApiModelProperty(value = "方向X (四元数)")
     private Double orientationX = 0.0;
 
-    @ApiModelProperty(value = "方向Y")
+    @ApiModelProperty(value = "方向Y (四元数)")
     private Double orientationY = 0.0;
 
-    @ApiModelProperty(value = "方向Z")
+    @ApiModelProperty(value = "方向Z (四元数)")
     private Double orientationZ = 0.0;
 
-    @ApiModelProperty(value = "方向W")
+    @ApiModelProperty(value = "方向W (四元数)")
     private Double orientationW = 1.0;
 
     @ApiModelProperty(value = "行为树")
     private String behaviorTree = "";
+
+    // 欧拉角转四元数的转换方法
+    public void eulerToQuaternion() {
+        double cr = Math.cos(roll * 0.5);
+        double sr = Math.sin(roll * 0.5);
+        double cp = Math.cos(pitch * 0.5);
+        double sp = Math.sin(pitch * 0.5);
+        double cy = Math.cos(yaw * 0.5);
+        double sy = Math.sin(yaw * 0.5);
+
+        orientationW = cr * cp * cy + sr * sp * sy;
+        orientationX = sr * cp * cy - cr * sp * sy;
+        orientationY = cr * sp * cy + sr * cp * sy;
+        orientationZ = cr * cp * sy - sr * sp * cy;
+    }
 
     public Double getX() {
         return x;
@@ -56,6 +80,30 @@ public class NavigationGoalDTO {
 
     public void setZ(Double z) {
         this.z = z;
+    }
+
+    public Double getRoll() {
+        return roll;
+    }
+
+    public void setRoll(Double roll) {
+        this.roll = roll;
+    }
+
+    public Double getPitch() {
+        return pitch;
+    }
+
+    public void setPitch(Double pitch) {
+        this.pitch = pitch;
+    }
+
+    public Double getYaw() {
+        return yaw;
+    }
+
+    public void setYaw(Double yaw) {
+        this.yaw = yaw;
     }
 
     public Double getOrientationX() {
@@ -104,6 +152,9 @@ public class NavigationGoalDTO {
                 "x=" + x +
                 ", y=" + y +
                 ", z=" + z +
+                ", roll=" + roll +
+                ", pitch=" + pitch +
+                ", yaw=" + yaw +
                 ", orientationX=" + orientationX +
                 ", orientationY=" + orientationY +
                 ", orientationZ=" + orientationZ +

@@ -102,6 +102,12 @@ export const constantRoutes = [
         component: () => import('@/views/robot/quick-verify'),
         name: 'QuickVerify',
         meta: { title: '快速验证导航', icon: 'check', affix: false }
+      },
+      {
+        path: 'ros2map',
+        component: () => import('@/views/robot/ros2Map'),
+        name: 'ROS2MapViewer',
+        meta: { title: 'ROS2地图查看', icon: 'map', affix: false }
       }
     ]
   },

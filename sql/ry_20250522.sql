@@ -728,6 +728,7 @@ CREATE TABLE `tb_nav2_point`  (
                                        `id` bigint NOT NULL AUTO_INCREMENT,
                                        `x_pos` double NULL DEFAULT NULL,
                                        `y_pos` double NULL DEFAULT NULL,
+                                       `yaw` double NULL DEFAULT NULL,
                                        `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL,
 
                                        PRIMARY KEY (`id`) USING BTREE

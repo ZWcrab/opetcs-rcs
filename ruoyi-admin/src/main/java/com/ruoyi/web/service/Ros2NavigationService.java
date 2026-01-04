@@ -1,6 +1,7 @@
 package com.ruoyi.web.service;
 
 import com.ruoyi.web.model.dto.NavigationGoalDTO;
+import com.ruoyi.web.model.dto.TextToSpeechDTO;
 
 public interface Ros2NavigationService {
 
@@ -34,4 +35,11 @@ public interface Ros2NavigationService {
      * @return 是否已连接
      */
     boolean isConnected();
+
+    /**
+     * 发送文本转语音请求到ROS2
+     * @param textToSpeechDTO 语音合成请求
+     * @return 是否发送成功
+     */
+    boolean sendTextToSpeech(TextToSpeechDTO textToSpeechDTO);
 }

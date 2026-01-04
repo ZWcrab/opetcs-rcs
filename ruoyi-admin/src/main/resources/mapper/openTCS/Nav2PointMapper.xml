@@ -6,15 +6,20 @@
 
     <!-- 保存导航点位 -->
     <insert id="insertNav2Point" parameterType="com.ruoyi.web.model.entity.Nav2Point">
-        insert into tb_nav2_point (name, x_pos, y_pos)
-        values (#{name}, #{xPos}, #{yPos})
+        insert into tb_nav2_point (name, x_pos, y_pos, yaw)
+        values (#{name}, #{xPos}, #{yPos}, #{yaw})
     </insert>
 
     <!-- 查询所有导航点位 -->
     <select id="selectAllNav2Points" resultType="com.ruoyi.web.model.entity.Nav2Point">
-        select id, name, x_pos as xPos, y_pos as yPos
+        select id, name, x_pos as xPos, y_pos as yPos, yaw
         from tb_nav2_point
         order by id desc
     </select>
+
+    <!-- 删除导航点位 -->
+    <delete id="deleteNav2Point" parameterType="java.lang.Long">
+        delete from tb_nav2_point where id = #{id}
+    </delete>
 
 </mapper>

@@ -27,4 +27,12 @@ public interface Nav2PointMapper {
      * @return 导航点位列表
      */
     List<Nav2Point> selectAllNav2Points();
+    
+    /**
+     * 删除导航点位
+     *
+     * @param id 导航点位ID
+     * @return 影响行数
+     */
+    int deleteNav2Point(Long id);
 }

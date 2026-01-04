@@ -139,6 +139,64 @@
             </el-form>
           </div>
           
+          <!-- 语音合成功能 -->
+          <div class="tts-section">
+            <h3>语音合成</h3>
+            <el-form :model="ttsRequest" label-width="120px">
+              <el-form-item label="语音内容">
+                <el-input 
+                  v-model="ttsRequest.text" 
+                  type="textarea" 
+                  placeholder="请输入要合成的文本" 
+                  rows="3"
+                  style="width: 500px;"
+                ></el-input>
+              </el-form-item>
+              <el-form-item label="语言">
+                <el-select v-model="ttsRequest.language" style="width: 150px;">
+                  <el-option label="中文" value="zh"></el-option>
+                  <el-option label="英文" value="en"></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="语速(0-100)">
+                <el-slider 
+                  v-model="ttsRequest.speed" 
+                  :min="0" 
+                  :max="100" 
+                  style="width: 200px;"
+                ></el-slider>
+                <span class="slider-value">{{ ttsRequest.speed }}</span>
+              </el-form-item>
+              <el-form-item label="音调(0-100)">
+                <el-slider 
+                  v-model="ttsRequest.pitch" 
+                  :min="0" 
+                  :max="100" 
+                  style="width: 200px;"
+                ></el-slider>
+                <span class="slider-value">{{ ttsRequest.pitch }}</span>
+              </el-form-item>
+              <el-form-item label="音量(0-100)">
+                <el-slider 
+                  v-model="ttsRequest.volume" 
+                  :min="0" 
+                  :max="100" 
+                  style="width: 200px;"
+                ></el-slider>
+                <span class="slider-value">{{ ttsRequest.volume }}</span>
+              </el-form-item>
+              <el-form-item>
+                <el-button 
+                  type="warning" 
+                  @click="sendTextToSpeech" 
+                  :disabled="!rosConnected || !ttsRequest.text.trim()"
+                >
+                  发送语音
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </div>
+          
           <!-- 日志输出 -->
           <div class="logs-section">
             <h3>日志输出</h3>
@@ -164,6 +222,7 @@
 <script>
 import { connectRos2, disconnectRos2, getRos2Status, sendNavigationGoal, cancelNavigationGoal } from '@/api/ros2/navigation'
 import { saveNav2Point, getAllNav2Points } from '@/api/ros2/point'
+import { sendTextToSpeech } from '@/api/ros2/tts'
 
 export default {
   name: 'QuickVerify',
@@ -186,7 +245,15 @@ export default {
       // 日志
       logs: [],
       // 结果
-      result: null
+      result: null,
+      // 语音合成
+      ttsRequest: {
+        text: '你好，这是一个文本转语音测试',
+        language: 'zh',
+        speed: 50,
+        pitch: 50,
+        volume: 50
+      }
     };
   },
   mounted() {
@@ -389,6 +456,39 @@ export default {
       }
     },
 
+    // 发送语音合成请求
+    async sendTextToSpeech() {
+      if (!this.rosConnected) {
+        this.addLog('ROS2未连接，请先连接ROS2');
+        this.$message.warning('ROS2未连接，请先连接ROS2');
+        return;
+      }
+
+      if (!this.ttsRequest.text.trim()) {
+        this.$message.warning('请输入要合成的文本');
+        return;
+      }
+
+      try {
+        this.addLog('正在发送语音合成请求...');
+        this.addLog(`语音内容: ${this.ttsRequest.text}`);
+        this.addLog(`参数: 语言=${this.ttsRequest.language}, 语速=${this.ttsRequest.speed}, 音调=${this.ttsRequest.pitch}, 音量=${this.ttsRequest.volume}`);
+
+        const response = await sendTextToSpeech(this.ttsRequest);
+        
+        if (response.code === 200) {
+          this.addLog('语音合成请求发送成功');
+          this.$message.success('语音合成请求发送成功');
+        } else {
+          this.addLog(`语音合成请求发送失败: ${response.msg}`);
+          this.$message.error(response.msg || '语音合成请求发送失败');
+        }
+      } catch (error) {
+        this.addLog(`发送语音合成请求失败: ${error.message}`);
+        this.$message.error('发送语音合成请求失败，请检查ROS2配置');
+      }
+    },
+
     // 添加日志
     addLog(content) {
       const time = new Date().toLocaleTimeString();
@@ -570,6 +670,19 @@ h3 {
 /* 目标区域样式 */
 .goal-section {
   margin-bottom: 25px;
+}
+
+/* 语音合成区域样式 */
+.tts-section {
+  margin-bottom: 25px;
+}
+
+.slider-value {
+  margin-left: 10px;
+  font-size: 14px;
+  color: #606266;
+  min-width: 30px;
+  display: inline-block;
 }
 
 /* 日志区域样式 */
