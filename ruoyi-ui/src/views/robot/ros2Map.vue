@@ -75,35 +75,30 @@
     
     <!-- 主地图区域 -->
     <div class="main-content">
-      <!-- 相机图像面板 -->
-      <div class="camera-panel">
-        <div class="camera-header">
-          <h4>相机图像</h4>
-          <div class="camera-controls">
-            <label>
-              <input type="checkbox" v-model="cameraEnabled" @change="toggleCamera" />
-              启用相机
-            </label>
-            <select v-model="cameraTopic" @change="updateCameraTopic" class="camera-select">
-              <option value="/usb_cam/image_raw">默认相机</option>
-              <option value="/camera2/image_raw">相机2</option>
-            </select>
-          </div>
-        </div>
-        <div class="camera-content">
-          <div v-if="!cameraEnabled" class="camera-disabled">
-            相机已禁用
-          </div>
-          <div v-else-if="cameraImage" class="camera-image-container">
-            <img :src="cameraImage" alt="ROS2相机图像" class="camera-image" />
-          </div>
-          <div v-else class="camera-loading">
-            正在加载相机图像...
-          </div>
-        </div>
-      </div>
-      
       <div ref="mapContainer" class="map-area">
+        <!-- 相机图像面板 - 小窗模式 -->
+        <div class="camera-panel-small" ref="cameraPanel">
+          <div class="camera-header-small">
+            <h5>相机图像</h5>
+            <div class="camera-controls-small">
+              <label>
+                <input type="checkbox" v-model="cameraEnabled" @change="toggleCamera" class="camera-checkbox" />
+                {{ cameraEnabled ? '禁用' : '启用' }}
+              </label>
+            </div>
+          </div>
+          <div class="camera-content-small" v-if="cameraEnabled">
+            <iframe 
+              src="http://10.188.232.82:8080/stream_viewer?topic=/image_raw" 
+              frameborder="0" 
+              class="camera-iframe-small" 
+              title="ROS2相机图像"
+              ref="cameraIframe"
+            ></iframe>
+          </div>
+          <!-- 调整大小手柄 -->
+          <div class="resize-handle" @mousedown="startResize" v-if="cameraEnabled"></div>
+        </div>
         <!-- 语音合成控制面板 -->
         <div class="tts-control-panel">
           <!-- 切换按钮 -->
@@ -386,16 +381,27 @@ export default {
       cameraImage: null,
       cameraTopic: '/camera/image_raw',
       cameraSubscriber: null,
-      imageTransport: null
+      imageTransport: null,
+      
+      // 调整大小相关
+      isResizing: false,
+      startX: 0,
+      startY: 0,
+      startWidth: 0,
+      startHeight: 0
     }
   },
   mounted() {
     this.initialize()
-    window.addEventListener('resize', this.setupCanvas)
+    // 添加调整大小的事件监听器
+    document.addEventListener('mousemove', this.handleResize)
+    document.addEventListener('mouseup', this.stopResize)
   },
   beforeDestroy() {
     this.disconnectROS()
-    window.removeEventListener('resize', this.setupCanvas)
+    // 移除调整大小的事件监听器
+    document.removeEventListener('mousemove', this.handleResize)
+    document.removeEventListener('mouseup', this.stopResize)
   },
   methods: {
     // 初始化
@@ -600,7 +606,6 @@ export default {
             this.rosConnected = true
             this.updateStatus('已连接', 'connected')
             this.setupSubscribers()
-            this.setupCameraSubscriber() // 初始化相机订阅
           })
           
           this.ros.on('error', (error) => {
@@ -1869,47 +1874,79 @@ export default {
     
     // 启用/禁用相机
     toggleCamera() {
-      if (this.cameraEnabled) {
-        console.log('相机已启用')
-      } else {
-        console.log('相机已禁用')
-        this.cameraImage = null
-      }
+      console.log('相机状态:', this.cameraEnabled ? '启用' : '禁用')
     },
     
-    // 更新相机话题
+    // 更新相机话题 - 保留方法以避免错误
     updateCameraTopic() {
-      // 先取消当前订阅
-      if (this.cameraSubscriber) {
-        this.cameraSubscriber.unsubscribe()
-        this.cameraSubscriber = null
-      }
-      
-      // 重新订阅新话题
-      if (this.rosConnected) {
-        this.setupCameraSubscriber()
-      }
-      
-      // 清除当前图像
-      this.cameraImage = null
-      console.log(`已切换相机话题到: ${this.cameraTopic}`)
+      console.log('相机话题更新:', this.cameraTopic)
     },
     
-    // 清理相机资源
+    // 清理相机资源 - 保留方法以避免错误
     cleanupCamera() {
-      if (this.cameraSubscriber) {
-        this.cameraSubscriber.unsubscribe()
-        this.cameraSubscriber = null
-      }
+      console.log('清理相机资源')
+    },
+    
+    // 开始调整大小
+    startResize(event) {
+      event.preventDefault()
+      this.isResizing = true
       
-      // 释放 URL 对象，避免内存泄漏
-      if (this.cameraImage && this.cameraImage.startsWith('blob:')) {
-        URL.revokeObjectURL(this.cameraImage)
+      // 获取初始位置和尺寸
+      const panel = this.$refs.cameraPanel
+      if (panel) {
+        const rect = panel.getBoundingClientRect()
+        this.startX = event.clientX
+        this.startY = event.clientY
+        this.startWidth = rect.width
+        this.startHeight = rect.height
+        
+        // 添加样式以指示正在调整大小
+        panel.style.cursor = 'nwse-resize'
       }
+    },
+    
+    // 处理调整大小
+    handleResize(event) {
+      if (!this.isResizing) return
       
-      this.cameraImage = null
-      this.cameraEnabled = false
-      console.log('相机资源已清理')
+      const panel = this.$refs.cameraPanel
+      const iframe = this.$refs.cameraIframe
+      if (!panel) return
+      
+      // 计算新尺寸
+      const deltaX = event.clientX - this.startX
+      const deltaY = event.clientY - this.startY
+      
+      // 设置最小尺寸限制
+      const minWidth = 200
+      const minHeight = 150
+      
+      const newWidth = Math.max(minWidth, this.startWidth + deltaX)
+      const newHeight = Math.max(minHeight, this.startHeight + deltaY)
+      
+      // 更新面板尺寸
+      panel.style.width = `${newWidth}px`
+      panel.style.height = `${newHeight}px`
+      
+      // 更新iframe高度（面板高度减去头部和内边距）
+      if (iframe) {
+        const headerHeight = 36 // 头部高度
+        const padding = 16 // 上下内边距总和
+        const newIframeHeight = Math.max(100, newHeight - headerHeight - padding)
+        iframe.style.height = `${newIframeHeight}px`
+      }
+    },
+    
+    // 停止调整大小
+    stopResize() {
+      if (this.isResizing) {
+        this.isResizing = false
+        const panel = this.$refs.cameraPanel
+        if (panel) {
+          panel.style.cursor = ''
+        }
+      }
     }
   }
 }
@@ -2200,6 +2237,110 @@ html, body {
   object-fit: contain;
 }
 
+.camera-iframe {
+  width: 100%;
+  height: 400px;
+  border: none;
+  border-radius: 4px;
+}
+
+/* 小窗相机面板样式 */
+.camera-panel-small {
+  position: absolute;
+  top: 20px;
+  left: 380px;
+  width: 672px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+/* 当面板包含内容时（相机启用），固定高度 */
+.camera-panel-small:has(.camera-content-small) {
+  height: 566px;
+}
+
+/* 当面板没有内容时（相机禁用），自适应高度 */
+.camera-panel-small:not(:has(.camera-content-small)) {
+  height: auto;
+  min-height: 36px;
+}
+
+.camera-header-small {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #409eff;
+  color: white;
+  font-size: 14px;
+  height: 36px;
+  box-sizing: border-box;
+}
+
+.camera-header-small h5 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.camera-controls-small {
+  display: flex;
+  align-items: center;
+}
+
+.camera-controls-small label {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  margin: 0;
+  color: white;
+  cursor: pointer;
+}
+
+.camera-checkbox {
+  margin-right: 4px;
+}
+
+.camera-content-small {
+  padding: 8px;
+  box-sizing: border-box;
+  height: calc(100% - 36px);
+}
+
+.camera-iframe-small {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 4px;
+  transition: height 0.3s ease;
+}
+
+/* 调整大小手柄样式 */
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  background: #409eff;
+  cursor: nwse-resize;
+  border-top-left-radius: 4px;
+  box-shadow: -2px -2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 101;
+  transition: all 0.2s ease;
+}
+
+.resize-handle:hover {
+  background: #66b1ff;
+  width: 20px;
+  height: 20px;
+}
+
 .camera-disabled,
 .camera-loading {
   color: #909399;
@@ -2468,11 +2609,11 @@ html, body {
   background: #2980b9;
 }
 
-/* 已保存位置列表样式 */
+/* 已保存的位置列表样式 */
 .saved-positions-list {
   position: absolute;
-  top: 15px;
-  left: 230px;
+  top: 100px;
+  left: 15px;
   background: rgba(0, 0, 0, 0.7);
   color: white;
   border-radius: 6px;
