@@ -275,7 +275,7 @@
           </div>
         </div>
         <div class="dialog-actions">
-          <button @click="closeSaveDialog">取消</button>
+          <button @click="closeSavePositionDialog">取消</button>
           <button @click="savePosition" class="primary">保存</button>
         </div>
       </div>
@@ -297,7 +297,7 @@ export default {
           map: '/map',
           pose: '/amcl_pose',
           goal: '/goal_pose',
-          path: '/global_plan'
+          path: '/plan'
         }
       },
       
@@ -310,8 +310,9 @@ export default {
       ROSLIB: null,
       ros: null,
       mapSubscriber: null,
-      poseSubscriber: null,
+      poseSubscriber: null, // 位姿订阅
       pathSubscriber: null,
+      pathMesh: null, // 3D路径对象
       
       // 地图相关
       currentMap: null,
@@ -355,6 +356,7 @@ export default {
       currentSavePosition: { x: 0, y: 0, yaw: 0 },
       savePositionName: '',
       savedPositions: [],
+      savedPositionMeshes: [], // 存储3D场景中的位置标记,
       
       // three.js 相关
       scene: null,
@@ -428,6 +430,8 @@ export default {
             yaw: point.yaw,
             timestamp: new Date().toISOString()
           }))
+          // 渲染保存的位置
+          this.renderSavedPositions()
         }
       }).catch(error => {
         console.error('加载保存位置失败:', error)
@@ -724,9 +728,86 @@ export default {
     
     // 处理路径消息
     handlePathMessage(message) {
-      // 处理全局路径显示
-      console.log('收到路径消息:', message)
-      // 这里可以添加路径渲染逻辑
+      if (!this.currentMap || !this.scene) return
+      
+      // 提取路径点
+      const poses = message.poses || []
+      if (poses.length === 0) {
+        // 如果路径为空，清除现有路径
+        this.clearPath()
+        return
+      }
+      
+      this.renderPath(poses)
+    },
+    
+    // 渲染路径
+    renderPath(poses) {
+      import('three').then(THREE => {
+        // 清除旧路径
+        this.clearPath()
+        
+        if (!this.currentMap) return
+        
+        const map = this.currentMap
+        const mapWidth = map.width * map.resolution
+        const mapHeight = map.height * map.resolution
+        const mapOriginX = map.origin.x
+        const mapOriginY = map.origin.y
+        
+        // 创建路径点数组
+        const points = []
+        
+        poses.forEach(poseMsg => {
+          const pose = poseMsg.pose.position
+          
+          // 坐标转换
+          const robotMapX = pose.x - mapOriginX
+          const robotMapY = pose.y - mapOriginY
+          const threeX = robotMapX - mapWidth / 2
+          const threeZ = (mapHeight - robotMapY) - mapHeight / 2
+          
+          // 路径稍微抬高一点，避免与地图重叠
+          points.push(new THREE.Vector3(threeX, 0.05, threeZ))
+        })
+        
+        // 创建路径几何体
+        // 使用 CatmullRomCurve3 创建平滑曲线
+        const curve = new THREE.CatmullRomCurve3(points)
+        
+        // 增加分段数使曲线更圆滑
+        const pointsCount = Math.max(points.length * 5, 50)
+        const smoothPoints = curve.getPoints(pointsCount)
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(smoothPoints)
+        
+        // 创建材质
+        const material = new THREE.LineBasicMaterial({
+          color: 0x00ff00, // 绿色路径
+          linewidth: 3, // WebGL限制，可能在某些浏览器无效
+          transparent: true,
+          opacity: 0.8
+        })
+        
+        // 创建线条网格
+        this.pathMesh = new THREE.Line(geometry, material)
+        
+        // 添加到场景
+        this.scene.add(this.pathMesh)
+        
+      }).catch(error => {
+        console.error('Failed to render path:', error)
+      })
+    },
+    
+    // 清除路径
+    clearPath() {
+      if (this.pathMesh && this.scene) {
+        this.scene.remove(this.pathMesh)
+        if (this.pathMesh.geometry) this.pathMesh.geometry.dispose()
+        if (this.pathMesh.material) this.pathMesh.material.dispose()
+        this.pathMesh = null
+      }
     },
     
     // 渲染地图
@@ -808,6 +889,9 @@ export default {
         if (this.robotPose) {
           this.updateRobotPose()
         }
+        
+        // 渲染保存的位置
+        this.renderSavedPositions()
       }).catch(error => {
         console.error('Failed to render 3D map:', error)
       })
@@ -947,6 +1031,136 @@ export default {
         this.scene.add(this.robotMesh)
       }).catch(error => {
         console.error('Failed to update robot pose:', error)
+      })
+    },
+
+    // 渲染保存的位置标记
+    renderSavedPositions() {
+      if (!this.currentMap || !this.scene) return
+      
+      import('three').then(THREE => {
+        // 清除旧标记
+        if (this.savedPositionMeshes && this.savedPositionMeshes.length > 0) {
+          this.savedPositionMeshes.forEach(mesh => {
+            this.scene.remove(mesh)
+            // 递归释放资源
+            mesh.traverse((child) => {
+              if (child.geometry) child.geometry.dispose()
+              if (child.material) {
+                if (Array.isArray(child.material)) {
+                  child.material.forEach(m => {
+                    if (m.map) m.map.dispose()
+                    m.dispose()
+                  })
+                } else {
+                  if (child.material.map) child.material.map.dispose()
+                  child.material.dispose()
+                }
+              }
+            })
+          })
+        }
+        this.savedPositionMeshes = []
+
+        const map = this.currentMap
+        const mapWidth = map.width * map.resolution
+        const mapHeight = map.height * map.resolution
+        const mapOriginX = map.origin.x
+        const mapOriginY = map.origin.y
+
+        this.savedPositions.forEach(pos => {
+          // 坐标转换
+          const robotMapX = pos.x - mapOriginX
+          const robotMapY = pos.y - mapOriginY
+          const threeX = robotMapX - mapWidth / 2
+          const threeZ = (mapHeight - robotMapY) - mapHeight / 2
+
+          // 创建标记组
+          const group = new THREE.Group()
+          
+          // 1. 杆子
+          const poleGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8)
+          const poleMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF })
+          const pole = new THREE.Mesh(poleGeometry, poleMaterial)
+          pole.position.y = 0.25
+          group.add(pole)
+          
+          // 2. 顶部标志（菱形/八面体）
+          const headGeometry = new THREE.OctahedronGeometry(0.15)
+          const headMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xe67e22, // 橙色
+            metalness: 0.3,
+            roughness: 0.4
+          })
+          const head = new THREE.Mesh(headGeometry, headMaterial)
+          head.position.y = 0.5
+          group.add(head)
+          
+          // 3. 底部底座（小圆盘）
+          const baseGeometry = new THREE.CircleGeometry(0.1, 16)
+          const baseMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xe67e22, 
+            transparent: true, 
+            opacity: 0.5,
+            side: THREE.DoubleSide
+          })
+          const base = new THREE.Mesh(baseGeometry, baseMaterial)
+          base.rotation.x = -Math.PI / 2
+          base.position.y = 0.01 // 略微高于地面
+          group.add(base)
+
+          // 4. 文字标签
+          if (pos.name) {
+            const canvas = document.createElement('canvas')
+            const context = canvas.getContext('2d')
+            const fontSize = 24
+            const font = `bold ${fontSize}px Arial`
+            context.font = font
+            const textMetrics = context.measureText(pos.name)
+            const textWidth = textMetrics.width
+            
+            // 设置画布大小（添加内边距）
+            canvas.width = textWidth + 20
+            canvas.height = fontSize + 16
+            
+            // 绘制背景
+            context.fillStyle = 'rgba(0, 0, 0, 0.6)'
+            // 圆角矩形背景
+            context.beginPath()
+            context.roundRect(0, 0, canvas.width, canvas.height, 6)
+            context.fill()
+            
+            // 绘制文字
+            context.font = font
+            context.fillStyle = '#ffffff'
+            context.textAlign = 'center'
+            context.textBaseline = 'middle'
+            context.fillText(pos.name, canvas.width / 2, canvas.height / 2)
+            
+            // 创建纹理和精灵
+            const texture = new THREE.CanvasTexture(canvas)
+            const spriteMaterial = new THREE.SpriteMaterial({ 
+              map: texture,
+              transparent: true
+            })
+            const sprite = new THREE.Sprite(spriteMaterial)
+            
+            // 调整精灵大小和位置
+            const scale = 0.007 // 缩小字体大小 (0.02 -> 0.007)
+            sprite.scale.set(canvas.width * scale, canvas.height * scale, 1)
+            sprite.position.y = 0.75 // 稍微降低高度，使其更贴近标记
+            group.add(sprite)
+          }
+
+          // 设置位置
+          group.position.set(threeX, 0, threeZ)
+          
+          // 添加到场景
+          this.scene.add(group)
+          this.savedPositionMeshes.push(group)
+        })
+      }).catch(error => {
+        console.error('Failed to render saved positions:', error)
       })
     },
     
@@ -1414,6 +1628,9 @@ export default {
       // 添加到保存位置列表
       this.savedPositions.push(positionToSave)
       
+      // 立即更新3D显示
+      this.renderSavedPositions()
+      
       // 调用后端接口保存位置（这里需要替换为实际的API调用）
       this.callSavePositionAPI(positionToSave)
       
@@ -1440,6 +1657,9 @@ export default {
         // 从列表中删除
         const deletedPosition = this.savedPositions[index]
         this.savedPositions.splice(index, 1)
+        
+        // 立即更新3D显示
+        this.renderSavedPositions()
         
         // 调用后端接口删除位置（这里需要替换为实际的API调用）
         this.callDeletePositionAPI(deletedPosition.id)
@@ -1523,6 +1743,8 @@ export default {
         this.pathSubscriber = null
       }
       
+      this.clearPath() // 清除3D路径对象
+
       if (this.ros) {
         this.ros.close()
         this.ros = null
