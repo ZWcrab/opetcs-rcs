@@ -59,6 +59,20 @@
         </div>
       </div>
       
+      <div class="sidebar-section">
+        <h3>控制</h3>
+        <div class="control-group">
+          <button 
+            @click="toggleKeyboardControl" 
+            class="keyboard-toggle-btn"
+            :class="{ active: enableKeyboardControl }"
+          >
+            <span class="btn-icon">{{ enableKeyboardControl ? '🎮' : '⌨️' }}</span>
+            <span class="btn-text">{{ enableKeyboardControl ? '关闭键盘控制' : '打开键盘控制' }}</span>
+          </button>
+        </div>
+      </div>
+
       <div class="robot-info" v-if="robotPose">
         <h4>机器人信息</h4>
         <p>位置: ({{ robotPose.x.toFixed(2) }}, {{ robotPose.y.toFixed(2) }})</p>
@@ -280,6 +294,26 @@
         </div>
       </div>
     </div>
+    <!-- 键盘控制小窗 -->
+    <div v-if="showKeyboardPanel" class="keyboard-control-panel">
+      <div class="keyboard-header">
+        <h5>键盘控制</h5>
+        <button class="close-btn" @click="toggleKeyboardControl">×</button>
+      </div>
+      <div class="keyboard-content">
+        <div class="arrow-row">
+          <div class="arrow-key up" :class="{ active: keysPressed['w'] || keysPressed['arrowup'] }">↑</div>
+        </div>
+        <div class="arrow-row">
+          <div class="arrow-key left" :class="{ active: keysPressed['a'] || keysPressed['arrowleft'] }">←</div>
+          <div class="arrow-key down" :class="{ active: keysPressed['s'] || keysPressed['arrowdown'] }">↓</div>
+          <div class="arrow-key right" :class="{ active: keysPressed['d'] || keysPressed['arrowright'] }">→</div>
+        </div>
+        <div class="keyboard-tip">
+          <p>WASD 或 方向键控制</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -297,7 +331,8 @@ export default {
           map: '/map',
           pose: '/amcl_pose',
           goal: '/goal_pose',
-          path: '/plan'
+          path: '/plan',
+          cmd_vel: '/cmd_vel'
         }
       },
       
@@ -390,7 +425,17 @@ export default {
       startX: 0,
       startY: 0,
       startWidth: 0,
-      startHeight: 0
+      startHeight: 0,
+
+      // 键盘控制相关
+      enableKeyboardControl: false,
+      showKeyboardPanel: false, // 键盘控制面板显示状态
+      cmdVelTopic: null,
+      keysPressed: {},
+      velocityLoop: null,
+      linearSpeed: 0.2,
+      angularSpeed: 0.5,
+      lastCmdTime: 0
     }
   },
   mounted() {
@@ -398,12 +443,26 @@ export default {
     // 添加调整大小的事件监听器
     document.addEventListener('mousemove', this.handleResize)
     document.addEventListener('mouseup', this.stopResize)
+    
+    // 添加键盘事件监听
+    window.addEventListener('keydown', this.handleKeyDown)
+    window.addEventListener('keyup', this.handleKeyUp)
   },
   beforeDestroy() {
     this.disconnectROS()
     // 移除调整大小的事件监听器
     document.removeEventListener('mousemove', this.handleResize)
     document.removeEventListener('mouseup', this.stopResize)
+    
+    // 移除键盘事件监听
+    window.removeEventListener('keydown', this.handleKeyDown)
+    window.removeEventListener('keyup', this.handleKeyUp)
+    
+    // 清理速度循环
+    if (this.velocityLoop) {
+      clearInterval(this.velocityLoop)
+      this.velocityLoop = null
+    }
   },
   methods: {
     // 初始化
@@ -668,6 +727,13 @@ export default {
       })
       
       this.pathSubscriber.subscribe(this.handlePathMessage.bind(this))
+
+      // 初始化速度控制发布者
+      this.cmdVelTopic = new this.ROSLIB.Topic({
+        ros: this.ros,
+        name: this.config.topics.cmd_vel,
+        messageType: 'geometry_msgs/Twist'
+      })
     },
     
     // 处理地图消息
@@ -2169,6 +2235,119 @@ export default {
           panel.style.cursor = ''
         }
       }
+    },
+
+    // 键盘控制逻辑
+    handleKeyDown(event) {
+      // 如果没有开启键盘控制，或者正在输入文字，不触发控制
+      if (!this.enableKeyboardControl || event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return
+
+      const key = event.key.toLowerCase()
+      // 允许的方向键：ArrowUp, ArrowDown, ArrowLeft, ArrowRight, w, a, s, d
+      const allowedKeys = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']
+      
+      if (allowedKeys.includes(key)) {
+        // 防止滚动页面
+        event.preventDefault()
+        
+        // 使用 $set 确保响应式更新，以便 UI 能即时反应
+        this.$set(this.keysPressed, key, true)
+        this.startVelocityLoop()
+      }
+    },
+
+    handleKeyUp(event) {
+      const key = event.key.toLowerCase()
+      if (this.keysPressed[key]) {
+        // 使用 $delete 确保响应式更新
+        this.$delete(this.keysPressed, key)
+        
+        // 检查是否还有按键按下，如果没有则发送停止指令
+        if (Object.keys(this.keysPressed).length === 0) {
+          this.stopRobot()
+          this.stopVelocityLoop()
+        }
+      }
+    },
+    
+    toggleKeyboardControl() {
+      this.enableKeyboardControl = !this.enableKeyboardControl
+      this.showKeyboardPanel = this.enableKeyboardControl
+      
+      if (this.enableKeyboardControl) {
+        this.$message.success('键盘控制已开启')
+      } else {
+        this.$message.info('键盘控制已关闭')
+        this.stopRobot()
+        this.stopVelocityLoop()
+        this.keysPressed = {}
+      }
+    },
+
+    startVelocityLoop() {
+      if (this.velocityLoop) return
+      
+      // 以 10Hz 频率发送速度指令
+      this.velocityLoop = setInterval(() => {
+        this.calculateAndPublishVelocity()
+      }, 100)
+    },
+
+    stopVelocityLoop() {
+      if (this.velocityLoop) {
+        clearInterval(this.velocityLoop)
+        this.velocityLoop = null
+      }
+    },
+
+    calculateAndPublishVelocity() {
+      if (!this.rosConnected || !this.cmdVelTopic) return
+
+      let linear = 0
+      let angular = 0
+
+      // 前后移动
+      if (this.keysPressed['w'] || this.keysPressed['arrowup']) {
+        linear += this.linearSpeed
+      }
+      if (this.keysPressed['s'] || this.keysPressed['arrowdown']) {
+        linear -= this.linearSpeed
+      }
+
+      // 左右旋转
+      if (this.keysPressed['a'] || this.keysPressed['arrowleft']) {
+        angular += this.angularSpeed
+      }
+      if (this.keysPressed['d'] || this.keysPressed['arrowright']) {
+        angular -= this.angularSpeed
+      }
+
+      // 构建 Twist 消息
+      const twist = new this.ROSLIB.Message({
+        linear: {
+          x: linear,
+          y: 0,
+          z: 0
+        },
+        angular: {
+          x: 0,
+          y: 0,
+          z: angular
+        }
+      })
+
+      this.cmdVelTopic.publish(twist)
+    },
+
+    stopRobot() {
+      if (!this.rosConnected || !this.cmdVelTopic) return
+
+      // 发送零速度指令
+      const twist = new this.ROSLIB.Message({
+        linear: { x: 0, y: 0, z: 0 },
+        angular: { x: 0, y: 0, z: 0 }
+      })
+      this.cmdVelTopic.publish(twist)
     }
   }
 }
@@ -2371,6 +2550,153 @@ html, body {
   .tts-form-item.slider-item {
     width: 100%;
   }
+}
+
+/* 键盘控制按钮美化 */
+.keyboard-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  color: #606266;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.keyboard-toggle-btn:hover {
+  background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
+  border-color: #c6e2ff;
+  color: #409eff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(64, 158, 255, 0.15);
+}
+
+.keyboard-toggle-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(64, 158, 255, 0.1);
+}
+
+.keyboard-toggle-btn.active {
+  background: linear-gradient(135deg, #409eff 0%, #3a8ee6 100%);
+  border-color: #3a8ee6;
+  color: white;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+}
+
+.keyboard-toggle-btn.active:hover {
+  background: linear-gradient(135deg, #66b1ff 0%, #409eff 100%);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.4);
+}
+
+.btn-icon {
+  font-size: 16px;
+}
+
+/* 键盘控制小窗样式 */
+.keyboard-control-panel {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 200px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.keyboard-control-panel:hover {
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+.keyboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.keyboard-header h5 {
+  margin: 0;
+  color: #303133;
+  font-size: 14px;
+}
+
+.close-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  color: #909399;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: #f56c6c;
+}
+
+.keyboard-content {
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.arrow-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.arrow-key {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #606266;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: all 0.1s ease;
+  user-select: none;
+}
+
+.arrow-key.active {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) inset;
+  transform: translateY(1px);
+}
+
+.keyboard-tip {
+  margin-top: 5px;
+  text-align: center;
+}
+
+.keyboard-tip p {
+  margin: 0;
+  font-size: 12px;
+  color: #909399;
 }
 
 /* 相机图像面板样式 */
