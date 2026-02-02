@@ -194,6 +194,29 @@
                   发送语音
                 </button>
               </div>
+
+              <!-- 语音指令部分 -->
+              <div class="tts-header" style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px;">
+                <h4>语音指令</h4>
+              </div>
+              <div class="tts-content">
+                <div class="tts-form-item">
+                  <label>选择指令:</label>
+                  <select v-model="selectedVoiceWord" class="tts-select">
+                    <option v-for="opt in voiceWordOptions" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                </div>
+                <div class="tts-actions">
+                  <button 
+                    @click="publishVoiceWord" 
+                    class="tts-send-btn"
+                    :disabled="!rosConnected"
+                  >
+                    播放语音
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
@@ -413,6 +436,11 @@ export default {
         volume: 50
       },
       
+      // 语音指令相关
+      voiceCommandTopic: null,
+      selectedVoiceWord: 'voice1',
+      voiceWordOptions: ['voice1', 'voice2', 'voice3'],
+
       // 相机相关
       cameraEnabled: false,
       cameraImage: null,
@@ -733,6 +761,13 @@ export default {
         ros: this.ros,
         name: this.config.topics.cmd_vel,
         messageType: 'geometry_msgs/Twist'
+      })
+
+      // 初始化语音指令发布者
+      this.voiceCommandTopic = new this.ROSLIB.Topic({
+        ros: this.ros,
+        name: '/voice_words',
+        messageType: 'std_msgs/String'
       })
     },
     
@@ -1851,6 +1886,21 @@ export default {
         console.error('发送语音合成请求失败:', error)
         this.$message.error('发送语音合成请求失败，请检查ROS配置')
       }
+    },
+
+    // 发布语音指令
+    publishVoiceWord() {
+      if (!this.rosConnected || !this.voiceCommandTopic) {
+        this.$message.warning('ROS未连接')
+        return
+      }
+
+      const message = new this.ROSLIB.Message({
+        data: this.selectedVoiceWord
+      })
+
+      this.voiceCommandTopic.publish(message)
+      this.$message.success(`已发送语音指令: ${this.selectedVoiceWord}`)
     },
     
     // 初始化相机订阅
