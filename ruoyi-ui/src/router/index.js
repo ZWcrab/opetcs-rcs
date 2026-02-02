@@ -108,6 +108,12 @@ export const constantRoutes = [
         component: () => import('@/views/robot/ros2Map'),
         name: 'ROS2MapViewer',
         meta: { title: 'ROS2地图查看', icon: 'map', affix: false }
+      },
+      {
+        path: 'flowProcess',
+        component: () => import('@/views/robot/flowProcess'),
+        name: 'FlowProcess',
+        meta: { title: '流程编排', icon: 'tree', affix: false }
       }
     ]
   },
