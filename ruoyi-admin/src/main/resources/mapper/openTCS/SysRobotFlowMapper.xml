@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.web.mapper.SysRobotFlowMapper">
+    
+    <resultMap type="com.ruoyi.web.model.entity.SysRobotFlow" id="SysRobotFlowResult">
+        <result property="flowId"    column="flow_id"    />
+        <result property="flowName"    column="flow_name"    />
+        <result property="remark"    column="remark"    />
+        <result property="createBy"    column="create_by"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="updateBy"    column="update_by"    />
+        <result property="updateTime"    column="update_time"    />
+    </resultMap>
+
+    <resultMap id="SysRobotFlowSysRobotFlowStepResult" type="com.ruoyi.web.model.entity.SysRobotFlow" extends="SysRobotFlowResult">
+        <collection property="stepList" notNullColumn="sub_step_id" javaType="java.util.List" resultMap="SysRobotFlowStepResult" />
+    </resultMap>
+
+    <resultMap type="com.ruoyi.web.model.entity.SysRobotFlowStep" id="SysRobotFlowStepResult">
+        <result property="stepId"    column="sub_step_id"    />
+        <result property="flowId"    column="sub_flow_id"    />
+        <result property="stepOrder"    column="sub_step_order"    />
+        <result property="stepType"    column="sub_step_type"    />
+        <result property="pointName"    column="sub_point_name"    />
+        <result property="xPos"    column="sub_x_pos"    />
+        <result property="yPos"    column="sub_y_pos"    />
+        <result property="yaw"    column="sub_yaw"    />
+        <result property="command"    column="sub_command"    />
+        <result property="waitTime"    column="sub_wait_time"    />
+    </resultMap>
+
+    <sql id="selectSysRobotFlowVo">
+        select flow_id, flow_name, remark, create_by, create_time, update_by, update_time from sys_robot_flow
+    </sql>
+
+    <select id="selectSysRobotFlowList" parameterType="com.ruoyi.web.model.entity.SysRobotFlow" resultMap="SysRobotFlowResult">
+        <include refid="selectSysRobotFlowVo"/>
+        <where>  
+            <if test="flowName != null  and flowName != ''"> and flow_name like concat('%', #{flowName}, '%')</if>
+        </where>
+    </select>
+    
+    <select id="selectSysRobotFlowById" parameterType="Long" resultMap="SysRobotFlowSysRobotFlowStepResult">
+        select a.flow_id, a.flow_name, a.remark, a.create_by, a.create_time, a.update_by, a.update_time,
+ b.step_id as sub_step_id, b.flow_id as sub_flow_id, b.step_order as sub_step_order, b.step_type as sub_step_type, b.point_name as sub_point_name, b.x_pos as sub_x_pos, b.y_pos as sub_y_pos, b.yaw as sub_yaw, b.command as sub_command, b.wait_time as sub_wait_time
+        from sys_robot_flow a
+        left join sys_robot_flow_step b on b.flow_id = a.flow_id
+        where a.flow_id = #{flowId}
+        order by b.step_order asc
+    </select>
+        
+    <insert id="insertSysRobotFlow" parameterType="com.ruoyi.web.model.entity.SysRobotFlow" useGeneratedKeys="true" keyProperty="flowId">
+        insert into sys_robot_flow
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="flowName != null and flowName != ''">flow_name,</if>
+            <if test="remark != null">remark,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="updateBy != null">update_by,</if>
+            <if test="updateTime != null">update_time,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="flowName != null and flowName != ''">#{flowName},</if>
+            <if test="remark != null">#{remark},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="updateBy != null">#{updateBy},</if>
+            <if test="updateTime != null">#{updateTime},</if>
+         </trim>
+    </insert>
+
+    <update id="updateSysRobotFlow" parameterType="com.ruoyi.web.model.entity.SysRobotFlow">
+        update sys_robot_flow
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="flowName != null and flowName != ''">flow_name = #{flowName},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="createBy != null">create_by = #{createBy},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+        </trim>
+        where flow_id = #{flowId}
+    </update>
+
+    <delete id="deleteSysRobotFlowById" parameterType="Long">
+        delete from sys_robot_flow where flow_id = #{flowId}
+    </delete>
+
+    <delete id="deleteSysRobotFlowByIds" parameterType="String">
+        delete from sys_robot_flow where flow_id in 
+        <foreach item="flowId" collection="array" open="(" separator="," close=")">
+            #{flowId}
+        </foreach>
+    </delete>
+    
+    <delete id="deleteSysRobotFlowStepByFlowIds" parameterType="String">
+        delete from sys_robot_flow_step where flow_id in 
+        <foreach item="flowId" collection="array" open="(" separator="," close=")">
+            #{flowId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteSysRobotFlowStepByFlowId" parameterType="Long">
+        delete from sys_robot_flow_step where flow_id = #{flowId}
+    </delete>
+
+    <insert id="batchSysRobotFlowStep">
+        insert into sys_robot_flow_step( flow_id, step_order, step_type, point_name, x_pos, y_pos, yaw, command, wait_time) values
+        <foreach item="item" index="index" collection="list" separator=",">
+            ( #{item.flowId}, #{item.stepOrder}, #{item.stepType}, #{item.pointName}, #{item.xPos}, #{item.yPos}, #{item.yaw}, #{item.command}, #{item.waitTime})
+        </foreach>
+    </insert>
+    
+    <select id="selectSysRobotFlowStepByFlowId" parameterType="Long" resultMap="SysRobotFlowStepResult">
+        select * from sys_robot_flow_step where flow_id = #{flowId} order by step_order asc
+    </select>
+
+    <delete id="deleteAllSysRobotFlow">
+        delete from sys_robot_flow
+    </delete>
+
+    <delete id="deleteAllSysRobotFlowStep">
+        delete from sys_robot_flow_step
+    </delete>
+</mapper>

@@ -15,6 +15,20 @@
         </el-button>
       </div>
       <div class="execution-controls">
+        <el-input 
+          v-model="flowName" 
+          placeholder="流程名称" 
+          size="small" 
+          style="width: 200px; margin-right: 10px"
+        ></el-input>
+        <el-button 
+          type="success" 
+          icon="el-icon-check" 
+          @click="saveFlow" 
+          :disabled="isExecuting || processList.length === 0"
+        >
+          保存流程
+        </el-button>
         <el-button 
           type="primary" 
           icon="el-icon-video-play" 
@@ -106,8 +120,26 @@
 
         <!-- 流程面板 -->
         <el-card class="box-card process-panel">
-          <div slot="header" class="clearfix">
-            <span>执行流程</span>
+          <div slot="header" class="clearfix" style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span>执行流程</span>
+              <el-select 
+                v-model="flowId" 
+                placeholder="选择流程" 
+                size="mini" 
+                style="width: 160px" 
+                @change="handleFlowChange"
+                filterable
+              >
+                <el-option 
+                  v-for="item in flowOptions" 
+                  :key="item.flowId" 
+                  :label="item.flowName" 
+                  :value="item.flowId" 
+                />
+              </el-select>
+              <el-button type="text" icon="el-icon-plus" @click="createNewFlow" size="mini">新建</el-button>
+            </div>
             <span v-if="isExecuting" class="executing-status">
               (正在执行第 {{ currentStepIndex + 1 }} / {{ processList.length }} 步)
             </span>
@@ -198,6 +230,7 @@ import draggable from 'vuedraggable'
 import ROSLIB from 'roslib'
 import request from '@/utils/request'
 import MapViewer3D from '@/components/MapViewer3D'
+import { listFlow, getFlow, addFlow, updateFlow } from '@/api/ros2/flow'
 
 export default {
   name: 'FlowProcess',
@@ -207,6 +240,11 @@ export default {
   },
   data() {
     return {
+      // 流程信息
+      flowId: null,
+      flowName: '新建流程_' + new Date().getTime(),
+      flowOptions: [], // 流程列表选项
+      
       // ROS相关
       ros: null,
       rosConnected: false,
@@ -258,7 +296,57 @@ export default {
   methods: {
     initialize() {
       this.loadSavedPositions()
+      this.loadFlowList()
       this.connectROS()
+    },
+
+    // 加载流程列表
+    loadFlowList() {
+      listFlow().then(response => {
+        if (response.rows) {
+          this.flowOptions = response.rows
+          // 如果当前没有选中流程且列表不为空，默认选中第一个
+          if (!this.flowId && this.flowOptions.length > 0) {
+            this.handleFlowChange(this.flowOptions[0].flowId)
+          }
+        }
+      })
+    },
+
+    // 切换流程
+    handleFlowChange(flowId) {
+      if (!flowId) return
+      
+      getFlow(flowId).then(response => {
+        if (response.code === 200) {
+          const flow = response.data
+          this.flowId = flow.flowId
+          this.flowName = flow.flowName
+          
+          if (flow.stepList) {
+            this.processList = flow.stepList.map(step => ({
+              id: 'loaded_' + step.stepId,
+              name: step.pointName,
+              type: step.stepType,
+              x: step.xPos,
+              y: step.yPos,
+              yaw: step.yaw,
+              command: step.command,
+              waitTime: step.waitTime,
+              tempId: Date.now() + Math.random()
+            }))
+          } else {
+            this.processList = []
+          }
+        }
+      })
+    },
+
+    createNewFlow() {
+      this.flowId = null
+      this.flowName = '新建流程_' + new Date().getTime()
+      this.processList = []
+      this.$message.info('已切换到新建模式')
     },
 
     // 加载位置列表
@@ -307,6 +395,50 @@ export default {
 
     clearProcess() {
       this.processList = []
+      this.flowId = null
+      this.flowName = '新建流程_' + new Date().getTime()
+    },
+
+    saveFlow() {
+      if (this.processList.length === 0) return
+
+      const data = {
+        flowId: this.flowId,
+        flowName: this.flowName,
+        stepList: this.processList.map((item, index) => ({
+          stepOrder: index + 1,
+          stepType: item.type,
+          pointName: item.name,
+          xPos: item.x,
+          yPos: item.y,
+          yaw: item.yaw,
+          command: item.command,
+          waitTime: item.waitTime
+        }))
+      }
+
+      if (this.flowId) {
+        updateFlow(data).then(response => {
+          if (response.code === 200) {
+            this.$message.success('流程更新成功')
+            this.loadFlowList() // 刷新列表以更新名称
+          } else {
+            this.$message.error('更新失败')
+          }
+        })
+      } else {
+        addFlow(data).then(response => {
+          if (response.code === 200) {
+            this.$message.success('新流程保存成功')
+            this.flowId = response.data // 假设后端返回新ID
+            this.loadFlowList() // 刷新列表
+            // 选中新流程
+            this.handleFlowChange(this.flowId)
+          } else {
+            this.$message.error('保存失败')
+          }
+        })
+      }
     },
 
     // ROS 连接逻辑
