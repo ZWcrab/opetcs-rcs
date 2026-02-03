@@ -15,6 +15,15 @@
         </el-button>
       </div>
       <div class="execution-controls">
+        <el-button 
+          v-if="isWaitingForContinue"
+          type="warning" 
+          icon="el-icon-video-play" 
+          @click="continueExecution"
+          class="blink-btn"
+        >
+          继续执行
+        </el-button>
         <el-input 
           v-model="flowName" 
           placeholder="流程名称" 
@@ -187,8 +196,20 @@
                 </div>
                 </div>
                 <div class="step-actions">
+                  <el-switch
+                    v-if="!isExecuting"
+                    v-model="element.isStop"
+                    active-text="停留"
+                    inactive-text=""
+                    style="margin-right: 10px"
+                  >
+                  </el-switch>
+                  <span v-else-if="element.isStop" style="font-size: 12px; color: #e6a23c; margin-right: 10px">
+                    (需确认)
+                  </span>
                   <i class="el-icon-close" @click="removeStep(index)" v-if="!isExecuting"></i>
-                  <i class="el-icon-loading" v-if="isExecuting && currentStepIndex === index"></i>
+                  <i class="el-icon-loading" v-if="isExecuting && currentStepIndex === index && !isWaitingForContinue"></i>
+                  <i class="el-icon-video-pause" v-if="isExecuting && currentStepIndex === index && isWaitingForContinue" style="color: #e6a23c"></i>
                   <i class="el-icon-check" v-if="isExecuting && currentStepIndex > index"></i>
                 </div>
               </div>
@@ -258,14 +279,14 @@ export default {
       savedPositions: [],
       voiceList: [
         { id: 'v1', name: '语音1', command: 'voice1', type: 'voice', waitTime: 10 },
-        { id: 'v2', name: '语音2', command: 'voice2', type: 'voice', waitTime: 10 },
-        { id: 'v3', name: '语音3', command: 'voice3', type: 'voice', waitTime: 10 }
+        { id: 'v2', name: '语音2', command: 'voice2', type: 'voice', waitTime: 10 }
       ],
       processList: [],
       robotPose: null,
       
       // 执行状态
       isExecuting: false,
+      isWaitingForContinue: false, // 是否等待用户点击继续
       currentStepIndex: -1,
       currentDistance: null,
       checkInterval: null,
@@ -333,6 +354,7 @@ export default {
               yaw: step.yaw,
               command: step.command,
               waitTime: step.waitTime,
+              isStop: step.isStop, // 加载停留状态
               tempId: Date.now() + Math.random()
             }))
           } else {
@@ -346,6 +368,7 @@ export default {
       this.flowId = null
       this.flowName = '新建流程_' + new Date().getTime()
       this.processList = []
+      this.isWaitingForContinue = false
       this.$message.info('已切换到新建模式')
     },
 
@@ -378,6 +401,7 @@ export default {
     clonePoint(original) {
       return {
         ...original,
+        isStop: false, // 默认不停留
         tempId: Date.now() + Math.random()
       }
     },
@@ -385,6 +409,7 @@ export default {
     cloneVoice(original) {
       return {
         ...original,
+        isStop: false, // 默认不停留
         tempId: Date.now() + Math.random()
       }
     },
@@ -413,7 +438,8 @@ export default {
           yPos: item.y,
           yaw: item.yaw,
           command: item.command,
-          waitTime: item.waitTime
+          waitTime: item.waitTime,
+          isStop: item.isStop
         }))
       }
 
@@ -548,25 +574,12 @@ export default {
       }
     },
     
-    finishVoiceStep() {
-      if (this.voiceTimeoutTimer) {
-        clearTimeout(this.voiceTimeoutTimer)
-        this.voiceTimeoutTimer = null
-      }
-      
-      this.$message.success('语音播放完成')
-      
-      setTimeout(() => {
-        this.currentStepIndex++
-        this.executeStep()
-      }, 500)
-    },
-
     // 流程执行逻辑
     async startExecution() {
       if (this.processList.length === 0) return
       
       this.isExecuting = true
+      this.isWaitingForContinue = false
       this.currentStepIndex = 0
       
       await this.executeStep()
@@ -574,6 +587,7 @@ export default {
 
     stopExecution() {
       this.isExecuting = false
+      this.isWaitingForContinue = false
       this.currentStepIndex = -1
       this.currentDistance = null
       if (this.checkInterval) {
@@ -584,6 +598,13 @@ export default {
         clearTimeout(this.voiceTimeoutTimer)
         this.voiceTimeoutTimer = null
       }
+    },
+
+    continueExecution() {
+      if (!this.isWaitingForContinue) return
+      this.isWaitingForContinue = false
+      this.currentStepIndex++
+      this.executeStep()
     },
 
     executeStep() {
@@ -603,6 +624,21 @@ export default {
         this.executePositionStep(target)
       }
     },
+    
+    // 步骤完成后的统一处理
+    handleStepComplete() {
+      const currentStep = this.processList[this.currentStepIndex]
+      
+      if (currentStep.isStop) {
+        this.isWaitingForContinue = true
+        this.$message.warning(`流程已在步骤 ${this.currentStepIndex + 1} 暂停，等待继续执行`)
+      } else {
+        setTimeout(() => {
+          this.currentStepIndex++
+          this.executeStep()
+        }, 1000)
+      }
+    },
 
     executeVoiceStep(target) {
       this.publishVoice(target.command)
@@ -614,6 +650,16 @@ export default {
         console.warn('语音播放超时，自动进入下一步')
         this.finishVoiceStep()
       }, timeout)
+    },
+    
+    finishVoiceStep() {
+      if (this.voiceTimeoutTimer) {
+        clearTimeout(this.voiceTimeoutTimer)
+        this.voiceTimeoutTimer = null
+      }
+      
+      this.$message.success('语音播放完成')
+      this.handleStepComplete()
     },
 
     executePositionStep(target) {
@@ -633,11 +679,7 @@ export default {
           this.checkInterval = null
           
           this.$message.success(`已到达: ${target.name}`)
-          
-          setTimeout(() => {
-            this.currentStepIndex++
-            this.executeStep()
-          }, 1000)
+          this.handleStepComplete()
         }
       }, 500)
     },

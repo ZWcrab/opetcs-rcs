@@ -29,6 +29,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="yaw"    column="sub_yaw"    />
         <result property="command"    column="sub_command"    />
         <result property="waitTime"    column="sub_wait_time"    />
+        <result property="isStop"    column="sub_is_stop"    />
     </resultMap>
 
     <sql id="selectSysRobotFlowVo">
@@ -44,7 +45,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     
     <select id="selectSysRobotFlowById" parameterType="Long" resultMap="SysRobotFlowSysRobotFlowStepResult">
         select a.flow_id, a.flow_name, a.remark, a.create_by, a.create_time, a.update_by, a.update_time,
- b.step_id as sub_step_id, b.flow_id as sub_flow_id, b.step_order as sub_step_order, b.step_type as sub_step_type, b.point_name as sub_point_name, b.x_pos as sub_x_pos, b.y_pos as sub_y_pos, b.yaw as sub_yaw, b.command as sub_command, b.wait_time as sub_wait_time
+ b.step_id as sub_step_id, b.flow_id as sub_flow_id, b.step_order as sub_step_order, b.step_type as sub_step_type, b.point_name as sub_point_name, b.x_pos as sub_x_pos, b.y_pos as sub_y_pos, b.yaw as sub_yaw, b.command as sub_command, b.wait_time as sub_wait_time, b.is_stop as sub_is_stop
         from sys_robot_flow a
         left join sys_robot_flow_step b on b.flow_id = a.flow_id
         where a.flow_id = #{flowId}
@@ -107,9 +108,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </delete>
 
     <insert id="batchSysRobotFlowStep">
-        insert into sys_robot_flow_step( flow_id, step_order, step_type, point_name, x_pos, y_pos, yaw, command, wait_time) values
+        insert into sys_robot_flow_step( flow_id, step_order, step_type, point_name, x_pos, y_pos, yaw, command, wait_time, is_stop) values
         <foreach item="item" index="index" collection="list" separator=",">
-            ( #{item.flowId}, #{item.stepOrder}, #{item.stepType}, #{item.pointName}, #{item.xPos}, #{item.yPos}, #{item.yaw}, #{item.command}, #{item.waitTime})
+            ( #{item.flowId}, #{item.stepOrder}, #{item.stepType}, #{item.pointName}, #{item.xPos}, #{item.yPos}, #{item.yaw}, #{item.command}, #{item.waitTime}, #{item.isStop})
         </foreach>
     </insert>
     

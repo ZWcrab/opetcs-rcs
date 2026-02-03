@@ -155,8 +155,8 @@ export default {
       import('three').then(THREE => {
         // 创建场景
         this.scene = new THREE.Scene()
-        this.scene.background = new THREE.Color(0x111116) // 科技感深色背景
-        this.scene.fog = new THREE.FogExp2(0x111116, 0.02) // 添加雾效增加深度感
+        this.scene.background = new THREE.Color(0xf0f2f5) // 浅灰色背景
+        // 移除雾效，保持明亮
         
         // 创建相机
         const width = container.clientWidth || 800
@@ -173,31 +173,23 @@ export default {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
         container.appendChild(this.renderer.domElement)
         
-        // 优化灯光
-        const ambientLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6)
+        // 优化灯光 (适应明亮场景)
+        const ambientLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.8)
         this.scene.add(ambientLight)
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
         directionalLight.position.set(10, 20, 10)
         directionalLight.castShadow = true
         directionalLight.shadow.mapSize.width = 2048
         directionalLight.shadow.mapSize.height = 2048
         this.scene.add(directionalLight)
         
-        // 添加点光源增加局部高光
-        const pointLight = new THREE.PointLight(0x409eff, 1, 100)
-        pointLight.position.set(0, 10, 0)
-        this.scene.add(pointLight)
-        
-        // 创建更美观的网格
-        const gridHelper = new THREE.GridHelper(60, 60, 0x409eff, 0x2c2c36)
+        // 创建网格 (深灰色以在浅背景可见)
+        const gridHelper = new THREE.GridHelper(60, 60, 0x999999, 0xdddddd)
         gridHelper.position.y = -0.01 // 略微下沉避免z-fighting
-        // 使网格半透明
-        gridHelper.material.transparent = true
-        gridHelper.material.opacity = 0.3
         this.scene.add(gridHelper)
         
-        // 添加坐标轴辅助 (缩小并半透明)
+        // 添加坐标轴辅助 (缩小)
         const axesHelper = new THREE.AxesHelper(2)
         axesHelper.position.y = 0.01
         this.scene.add(axesHelper)
@@ -447,25 +439,21 @@ export default {
         
         // AGV主体
         const bodyGeometry = new THREE.BoxGeometry(0.2, 0.07, 0.27)
-        // 增加发光效果的材质
-        const bodyMaterial = new THREE.MeshPhysicalMaterial({ 
-          color: 0xFF3333, 
-          metalness: 0.6, 
-          roughness: 0.2,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.1
+        // 使用更鲜艳的颜色以在亮色背景下突出
+        const bodyMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0xe74c3c, // 鲜艳红
+          metalness: 0.3, 
+          roughness: 0.4
         })
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial)
         body.position.y = 0.035
         body.castShadow = true
         this.robotMesh.add(body)
         
-        // 添加装饰性发光条
+        // 装饰条
         const stripGeometry = new THREE.BoxGeometry(0.22, 0.01, 0.02)
         const stripMaterial = new THREE.MeshBasicMaterial({ 
-          color: 0x00ffff,
-          transparent: true,
-          opacity: 0.8
+          color: 0x3498db // 亮蓝
         })
         const stripFront = new THREE.Mesh(stripGeometry, stripMaterial)
         stripFront.position.set(0, 0.04, -0.1)
@@ -475,10 +463,10 @@ export default {
         stripBack.position.set(0, 0.04, 0.1)
         this.robotMesh.add(stripBack)
         
-        // 朝向指示器 (改为发光箭头)
+        // 朝向指示器
         const arrowGeometry = new THREE.ConeGeometry(0.05, 0.2, 8)
         const arrowMaterial = new THREE.MeshBasicMaterial({ 
-          color: 0x00FF00
+          color: 0x2ecc71 // 鲜绿
         })
         const arrow = new THREE.Mesh(arrowGeometry, arrowMaterial)
         arrow.position.set(0, 0.135, 0)

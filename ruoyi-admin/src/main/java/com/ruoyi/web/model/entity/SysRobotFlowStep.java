@@ -42,6 +42,9 @@ public class SysRobotFlowStep extends BaseEntity
     /** 等待时间(秒) */
     private Integer waitTime;
 
+    /** 是否停留 */
+    private Boolean isStop;
+
     public void setStepId(Long stepId) 
     {
         this.stepId = stepId;
@@ -132,6 +135,15 @@ public class SysRobotFlowStep extends BaseEntity
     {
         return waitTime;
     }
+    public void setIsStop(Boolean isStop) 
+    {
+        this.isStop = isStop;
+    }
+
+    public Boolean getIsStop() 
+    {
+        return isStop;
+    }
 
     @Override
     public String toString() {
@@ -146,6 +158,7 @@ public class SysRobotFlowStep extends BaseEntity
                 ", yaw=" + yaw +
                 ", command='" + command + '\'' +
                 ", waitTime=" + waitTime +
+                ", isStop=" + isStop +
                 '}';
     }
 }
