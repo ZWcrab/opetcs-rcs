@@ -42,4 +42,14 @@ public interface Ros2NavigationService {
      * @return 是否发送成功
      */
     boolean sendTextToSpeech(TextToSpeechDTO textToSpeechDTO);
+
+    /**
+     * 直接向 /voice_words 话题发布语音播放命令。
+     * data 字段为 JSON 字符串：{"tts_text":"xxx","fileName":"voiceX"}
+     *
+     * @param ttsText  要合成/播放的文本
+     * @param fileName 语音文件名标识
+     * @return 是否发布成功
+     */
+    boolean publishVoiceWords(String ttsText, String fileName);
 }

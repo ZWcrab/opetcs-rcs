@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.web.mapper.TtsVoiceMapper">
+
+    <resultMap id="TtsVoiceResult" type="com.ruoyi.web.model.entity.TtsVoice">
+        <id column="id" property="id"/>
+        <result column="tts_text" property="ttsText"/>
+        <result column="file_name" property="fileName"/>
+    </resultMap>
+
+    <!-- 新增语音配置 -->
+    <insert id="insertTtsVoice" parameterType="com.ruoyi.web.model.entity.TtsVoice">
+        insert into tb_tts_voice (tts_text, file_name)
+        values (#{ttsText}, #{fileName})
+    </insert>
+
+    <!-- 查询全部语音配置 -->
+    <select id="selectAllTtsVoices" resultMap="TtsVoiceResult">
+        select id, tts_text, file_name
+        from tb_tts_voice
+        order by id desc
+    </select>
+
+    <delete id="deleteTtsVoiceById" parameterType="Long">
+        delete from tb_tts_voice where id = #{id}
+    </delete>
+</mapper>
+

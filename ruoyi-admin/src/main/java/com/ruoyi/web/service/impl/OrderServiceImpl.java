@@ -1,11 +1,11 @@
 package com.ruoyi.web.service.impl;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.common.utils.bean.BeanUtils;
 import com.ruoyi.system.domain.TbTransportOrder;
 import com.ruoyi.system.service.ITbTransportOrderService;
-import com.ruoyi.web.kernel.KernelServiceConfig;
 import com.ruoyi.web.model.dto.DestinationCreationDTO;
 import com.ruoyi.web.model.dto.TransportOrderCreationDTO;
 import com.ruoyi.web.model.dto.UpdateTransportOrderIntendedVehicleDTO;
@@ -38,11 +38,36 @@ public class OrderServiceImpl implements OrderService {
     @Resource
     ITbTransportOrderService tbTransportOrderService;
 
-    private final KernelServicePortal kernelServicePortal = KernelServiceConfig.getKernelServicePortal();
-    private final TransportOrderService transportOrderService = kernelServicePortal.getTransportOrderService();
+    /**
+     * 通过 Spring 注入 KernelServicePortal，配合懒加载与容错配置，
+     * 避免在项目启动阶段就强制连接 openTCS。
+     */
+    @Resource
+    private KernelServicePortal kernelServicePortal;
 
-    private final VehicleService vehicleService = kernelServicePortal.getVehicleService();
-    private final DispatcherService dispatcherService = kernelServicePortal.getDispatcherService();
+    private TransportOrderService getTransportOrderService() {
+        try {
+            return kernelServicePortal.getTransportOrderService();
+        } catch (Exception e) {
+            throw new ServiceException("openTCS 内核未连接或异常，无法访问运输订单服务").setDetailMessage(e.getMessage());
+        }
+    }
+
+    private VehicleService getVehicleService() {
+        try {
+            return kernelServicePortal.getVehicleService();
+        } catch (Exception e) {
+            throw new ServiceException("openTCS 内核未连接或异常，无法访问车辆服务").setDetailMessage(e.getMessage());
+        }
+    }
+
+    private DispatcherService getDispatcherService() {
+        try {
+            return kernelServicePortal.getDispatcherService();
+        } catch (Exception e) {
+            throw new ServiceException("openTCS 内核未连接或异常，无法访问调度服务").setDetailMessage(e.getMessage());
+        }
+    }
 
     @Override
     public List<TbTransportOrder> getOrders(String number) {
@@ -56,14 +81,18 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void withdrawByOrderId(String number) {
-        Optional<TransportOrder> fetch = vehicleService.fetch(TransportOrder.class, number);
-        if (fetch.isPresent()) {
-            TransportOrder order = fetch.get();
-            if (order.getProcessingVehicle() != null) {
-                vehicleService.updateVehicleIntegrationLevel(order.getProcessingVehicle(),
-                        Vehicle.IntegrationLevel.TO_BE_RESPECTED);
+        try {
+            Optional<TransportOrder> fetch = getVehicleService().fetch(TransportOrder.class, number);
+            if (fetch.isPresent()) {
+                TransportOrder order = fetch.get();
+                if (order.getProcessingVehicle() != null) {
+                    getVehicleService().updateVehicleIntegrationLevel(order.getProcessingVehicle(),
+                            Vehicle.IntegrationLevel.TO_BE_RESPECTED);
+                }
+                getDispatcherService().withdrawByTransportOrder(order.getReference(), true);
             }
-            dispatcherService.withdrawByTransportOrder(order.getReference(), true);
+        } catch (Exception e) {
+            throw new ServiceException("撤销订单失败，openTCS 内核未连接或异常").setDetailMessage(e.getMessage());
         }
     }
 
@@ -79,20 +108,24 @@ public class OrderServiceImpl implements OrderService {
             DestinationCreationTO destinationCreationTO = new DestinationCreationTO(dto.getDestLocationName(), dto.getDestOperation());
             destinationCreationTOS.add(destinationCreationTO);
         }
-        TransportOrderCreationTO orderTO
-                = new TransportOrderCreationTO(number, destinationCreationTOS);
-        orderTO = orderTO
-                .withDispensable(creationDTO.getDispensable())
-                .withIntendedVehicleName(creationDTO.getVehicleName())
-                .withDeadline(Instant.now().plus(1, ChronoUnit.HOURS));
-        transportOrderService.createTransportOrder(orderTO);
-        // 订单入库
-        Optional<TransportOrder> fetch = vehicleService.fetch(TransportOrder.class, number);
-        if (fetch.isPresent()) {
-            TransportOrder order = fetch.get();
-            OrdersVO vo = OrdersVO.fromTransportOrder(order);
-            TbTransportOrder tbTransportOrder = convert2entity(vo);
-            tbTransportOrderService.insertTbTransportOrder(tbTransportOrder);
+        try {
+            TransportOrderCreationTO orderTO
+                    = new TransportOrderCreationTO(number, destinationCreationTOS);
+            orderTO = orderTO
+                    .withDispensable(creationDTO.getDispensable())
+                    .withIntendedVehicleName(creationDTO.getVehicleName())
+                    .withDeadline(Instant.now().plus(1, ChronoUnit.HOURS));
+            getTransportOrderService().createTransportOrder(orderTO);
+            // 订单入库
+            Optional<TransportOrder> fetch = getVehicleService().fetch(TransportOrder.class, number);
+            if (fetch.isPresent()) {
+                TransportOrder order = fetch.get();
+                OrdersVO vo = OrdersVO.fromTransportOrder(order);
+                TbTransportOrder tbTransportOrder = convert2entity(vo);
+                tbTransportOrderService.insertTbTransportOrder(tbTransportOrder);
+            }
+        } catch (Exception e) {
+            throw new ServiceException("创建订单失败，openTCS 内核未连接或异常").setDetailMessage(e.getMessage());
         }
     }
 
@@ -110,11 +143,15 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void updateTransportOrderIntendedVehicle(UpdateTransportOrderIntendedVehicleDTO dto) {
-        Optional<TransportOrder> fetch = vehicleService.fetch(TransportOrder.class, dto.getName());
-        if (fetch.isPresent()) {
-            TransportOrder transportOrder = fetch.get();
-            Optional<Vehicle> vehicleFetch = vehicleService.fetch(Vehicle.class, dto.getVehicleName());
-            vehicleFetch.ifPresent(vehicle -> transportOrderService.updateTransportOrderIntendedVehicle(transportOrder.getReference(), vehicle.getReference()));
+        try {
+            Optional<TransportOrder> fetch = getVehicleService().fetch(TransportOrder.class, dto.getName());
+            if (fetch.isPresent()) {
+                TransportOrder transportOrder = fetch.get();
+                Optional<Vehicle> vehicleFetch = getVehicleService().fetch(Vehicle.class, dto.getVehicleName());
+                vehicleFetch.ifPresent(vehicle -> getTransportOrderService().updateTransportOrderIntendedVehicle(transportOrder.getReference(), vehicle.getReference()));
+            }
+        } catch (Exception e) {
+            throw new ServiceException("更新订单期望车辆失败，openTCS 内核未连接或异常").setDetailMessage(e.getMessage());
         }
     }
 

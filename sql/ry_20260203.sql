@@ -763,3 +763,11 @@ create table sys_robot_flow_step (
                                      is_stop tinyint(1) default 0 comment '是否停留(0否 1是)',
                                      primary key (step_id)
 ) engine=innodb auto_increment=100 comment = '机器人流程步骤表';
+
+CREATE TABLE tb_tts_voice (
+                              id        BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                              tts_text  VARCHAR(255) NOT NULL COMMENT '语音文本内容',
+                              file_name VARCHAR(100) NOT NULL COMMENT '语音文件名（如 voice1、voice2）',
+                              create_time DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                              PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='ROS2 语音文本配置表';

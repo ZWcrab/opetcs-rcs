@@ -1,6 +1,6 @@
 package com.ruoyi.web.service.impl;
 
-import com.ruoyi.web.kernel.KernelServiceConfig;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.web.service.MapService;
 import org.opentcs.access.KernelServicePortal;
 import org.opentcs.components.kernel.services.PlantModelService;
@@ -15,23 +15,32 @@ import java.util.Set;
 @Service
 public class MapServiceImpl implements MapService {
 
-    private static final KernelServicePortal kernelServicePortal = KernelServiceConfig.getKernelServicePortal();
+    /**
+     * 通过 Spring 注入 KernelServicePortal，避免在项目启动时就触发连接。
+     */
+    @Resource
+    private KernelServicePortal kernelServicePortal;
 
+    private PlantModelService getPlantModelService() {
+        try {
+            return kernelServicePortal.getPlantModelService();
+        } catch (Exception e) {
+            throw new ServiceException("openTCS 内核未连接或异常，无法获取地图信息").setDetailMessage(e.getMessage());
+        }
+    }
 
     @Override
     public Set<Point> getPoints() {
-        PlantModelService plantModelService = kernelServicePortal.getPlantModelService();
-        return plantModelService.getPlantModel().getPoints();
+        return getPlantModelService().getPlantModel().getPoints();
     }
+
     @Override
     public Set<Location> getLocations() {
-        PlantModelService plantModelService = kernelServicePortal.getPlantModelService();
-        return plantModelService.getPlantModel().getLocations();
+        return getPlantModelService().getPlantModel().getLocations();
     }
 
     @Override
     public PlantModel getMap() {
-        PlantModelService plantModelService = kernelServicePortal.getPlantModelService();
-        return plantModelService.getPlantModel();
+        return getPlantModelService().getPlantModel();
     }
 }

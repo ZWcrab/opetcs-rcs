@@ -1,6 +1,7 @@
 package com.ruoyi.web.service.impl;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.common.utils.bean.BeanUtils;
 import com.ruoyi.common.utils.http.HttpUtils;
 import com.ruoyi.web.common.enums.VehicleProcStatusEnum;
@@ -33,7 +34,11 @@ public class VehiclesServiceImpl
   private KernelServicePortal kernelServicePortal;
 
   private VehicleService getVehicleService() {
-    return kernelServicePortal.getVehicleService();
+    try {
+      return kernelServicePortal.getVehicleService();
+    } catch (Exception e) {
+      throw new ServiceException("openTCS 内核未连接或异常，无法访问车辆服务").setDetailMessage(e.getMessage());
+    }
   }
 
   @Override
@@ -68,20 +73,26 @@ public class VehiclesServiceImpl
 
   @Override
   public void initVehicle(VehicleInitDTO vehiclesQueryDTO) {
-    //获取车辆实例
+    try {
+      // 获取车辆实例
       Optional<Vehicle> fetch = getVehicleService().fetch(Vehicle.class, vehiclesQueryDTO.getName());
       fetch.ifPresent(v -> {
         getVehicleService().enableCommAdapter(v.getReference());
         getVehicleService().updateVehicleIntegrationLevel(v.getReference(), Vehicle.IntegrationLevel.TO_BE_UTILIZED);
       });
+    } catch (Exception e) {
+      throw new ServiceException("车辆初始化失败，openTCS 内核未连接或异常").setDetailMessage(e.getMessage());
+    }
   }
 
   @Override
   public void paused(VehiclePausedDTO vehiclePausedDTO) {
-    Optional<Vehicle> fetch = getVehicleService().fetch(Vehicle.class, vehiclePausedDTO.getName());
-    fetch.ifPresent(v -> {
-      getVehicleService().updateVehiclePaused(v.getReference(), vehiclePausedDTO.isPaused());
-    });
+    try {
+      Optional<Vehicle> fetch = getVehicleService().fetch(Vehicle.class, vehiclePausedDTO.getName());
+      fetch.ifPresent(v -> getVehicleService().updateVehiclePaused(v.getReference(), vehiclePausedDTO.isPaused()));
+    } catch (Exception e) {
+      throw new ServiceException("车辆暂停/恢复失败，openTCS 内核未连接或异常").setDetailMessage(e.getMessage());
+    }
   }
 
   private List<VehiclesInfoVO> process(List<VehiclesInfoVO> list) {
@@ -95,31 +106,35 @@ public class VehiclesServiceImpl
   }
 
   private List<VehiclesInfoVO> getALL() {
+    try {
       Set<Vehicle> vehicles = getVehicleService().fetch(Vehicle.class);
 
-    return process(vehicles.stream().map(vehicle -> {
-      VehiclesInfoVO vehiclesInfoVO = new VehiclesInfoVO();
-      BeanUtils.copyProperties(vehicle, vehiclesInfoVO);
-      for (Set<TCSResourceReference<?>> str:vehicle.getAllocatedResources()){
-        List<String> list = new ArrayList<>();
-        for (TCSResourceReference<?> str1:str){
-          list.add(str1.getName());
+      return process(vehicles.stream().map(vehicle -> {
+        VehiclesInfoVO vehiclesInfoVO = new VehiclesInfoVO();
+        BeanUtils.copyProperties(vehicle, vehiclesInfoVO);
+        for (Set<TCSResourceReference<?>> str : vehicle.getAllocatedResources()) {
+          List<String> list = new ArrayList<>();
+          for (TCSResourceReference<?> str1 : str) {
+            list.add(str1.getName());
+          }
+          vehiclesInfoVO.getAllocatedResources().add(list);
         }
-        vehiclesInfoVO.getAllocatedResources().add(list);
-      }
-      for (Set<TCSResourceReference<?>> str:vehicle.getClaimedResources()){
-        List<String> list = new ArrayList<>();
-        for (TCSResourceReference<?> str1:str){
-          list.add(str1.getName());
+        for (Set<TCSResourceReference<?>> str : vehicle.getClaimedResources()) {
+          List<String> list = new ArrayList<>();
+          for (TCSResourceReference<?> str1 : str) {
+            list.add(str1.getName());
+          }
+          vehiclesInfoVO.getClaimedResources().add(list);
         }
-        vehiclesInfoVO.getClaimedResources().add(list);
-      }
-      if(vehicle.getCurrentPosition()!=null){
-        vehiclesInfoVO.setCurrentPosition(vehicle.getCurrentPosition().getName());
-      }
+        if (vehicle.getCurrentPosition() != null) {
+          vehiclesInfoVO.setCurrentPosition(vehicle.getCurrentPosition().getName());
+        }
 
-      return vehiclesInfoVO;
-    }).collect(Collectors.toList()));
+        return vehiclesInfoVO;
+      }).collect(Collectors.toList()));
+    } catch (Exception e) {
+      throw new ServiceException("获取车辆列表失败，openTCS 内核未连接或异常").setDetailMessage(e.getMessage());
+    }
   }
 
   /**

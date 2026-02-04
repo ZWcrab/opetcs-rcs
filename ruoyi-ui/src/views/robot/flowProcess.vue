@@ -72,6 +72,13 @@
           <el-card class="box-card voice-panel">
             <div slot="header" class="clearfix">
               <span>语音列表</span>
+              <el-button
+                style="float: right; padding: 3px 0"
+                type="text"
+                @click="openAddVoiceDialog"
+              >
+                添加语音
+              </el-button>
             </div>
             <div class="list-container">
               <draggable
@@ -83,20 +90,26 @@
                 class="draggable-list"
               >
                 <div v-for="element in voiceList" :key="element.id" class="list-item source-item voice-item">
-                  <div style="flex: 1">
+                  <div style="flex: 1; display: flex; align-items: center; gap: 8px">
                     <i class="el-icon-mic"></i>
-                    {{ element.name }}
+                    <span style="font-weight: bold">{{ element.name }}</span>
                   </div>
-                  <div class="voice-time-input" @mousedown.stop>
-                    <el-input-number 
-                      v-model="element.waitTime" 
+                  <div class="voice-actions" @mousedown.stop>
+                    <el-button 
+                      type="text" 
+                      icon="el-icon-video-play" 
                       size="mini" 
-                      :min="1" 
-                      :max="60"
-                      controls-position="right"
-                      style="width: 80px"
-                    ></el-input-number>
-                    <span class="unit">秒</span>
+                      title="播放/发送到ROS"
+                      @click="playVoiceItem(element)"
+                    ></el-button>
+                    <el-button 
+                      type="text" 
+                      icon="el-icon-delete" 
+                      size="mini" 
+                      title="删除"
+                      style="color: #f56c6c"
+                      @click="handleDeleteVoice(element)"
+                    ></el-button>
                   </div>
                 </div>
               </draggable>
@@ -149,9 +162,17 @@
               </el-select>
               <el-button type="text" icon="el-icon-plus" @click="createNewFlow" size="mini">新建</el-button>
             </div>
-            <span v-if="isExecuting" class="executing-status">
-              (正在执行第 {{ currentStepIndex + 1 }} / {{ processList.length }} 步)
-            </span>
+            <div style="display: flex; align-items: center; gap: 15px;">
+              <el-switch
+                v-model="isLoopInspect"
+                active-text="巡检模式"
+                inactive-text="单次执行"
+                size="small"
+              />
+              <span v-if="isExecuting" class="executing-status">
+                (正在执行第 {{ currentStepIndex + 1 }} / {{ processList.length }} 步)
+              </span>
+            </div>
           </div>
           <div class="list-container process-container">
             <draggable
@@ -230,6 +251,7 @@
           <div class="map-wrapper">
             <MapViewer3D 
               ref="mapViewer"
+              :key="mapViewerKey"
               :ros="ros"
               :rosConnected="rosConnected"
             />
@@ -243,6 +265,41 @@
       当前位置: x={{ robotPose.x.toFixed(2) }}, y={{ robotPose.y.toFixed(2) }} | 
       距离目标: {{ currentDistance ? currentDistance.toFixed(2) + 'm' : '--' }}
     </div>
+
+    <!-- 添加语音弹框 -->
+    <el-dialog
+      title="添加语音"
+      :visible.sync="addVoiceDialogVisible"
+      width="500px"
+    >
+      <el-form
+        ref="addVoiceForm"
+        :model="newVoiceForm"
+        :rules="newVoiceRules"
+        label-width="80px"
+      >
+        <el-form-item label="文本" prop="ttsText">
+          <el-input
+            v-model="newVoiceForm.ttsText"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入要合成/播放的语音文本"
+          />
+        </el-form-item>
+        <el-form-item label="文件名" prop="fileName">
+          <el-input
+            v-model="newVoiceForm.fileName"
+            placeholder="例如：voice3、voice4"
+          />
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="addVoiceDialogVisible = false">取 消</el-button>
+        <el-button type="primary" :loading="addVoiceLoading" @click="handleSaveNewVoice">
+          保 存
+        </el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -252,6 +309,7 @@ import ROSLIB from 'roslib'
 import request from '@/utils/request'
 import MapViewer3D from '@/components/MapViewer3D'
 import { listFlow, getFlow, addFlow, updateFlow } from '@/api/ros2/flow'
+import { delVoice, listVoice, addVoice } from '@/api/ros2/tts'
 
 export default {
   name: 'FlowProcess',
@@ -277,10 +335,7 @@ export default {
       
       // 数据相关
       savedPositions: [],
-      voiceList: [
-        { id: 'v1', name: '语音1', command: 'voice1', type: 'voice', waitTime: 10 },
-        { id: 'v2', name: '语音2', command: 'voice2', type: 'voice', waitTime: 10 }
-      ],
+      voiceList: [],
       processList: [],
       robotPose: null,
       
@@ -291,10 +346,26 @@ export default {
       currentDistance: null,
       checkInterval: null,
       voiceTimeoutTimer: null,
+      // 是否巡检（循环执行流程）
+      isLoopInspect: false,
+      // 控制 MapViewer3D 重新渲染的 key（用于激活时强制重建组件）
+      mapViewerKey: 0,
       
       // 阈值配置
       arrivalThreshold: 0.5,
       voiceTimeout: 10000,
+
+      // 添加语音弹框
+      addVoiceDialogVisible: false,
+      addVoiceLoading: false,
+      newVoiceForm: {
+        ttsText: '',
+        fileName: ''
+      },
+      newVoiceRules: {
+        ttsText: [{ required: true, message: '请输入语音内容', trigger: 'blur' }],
+        fileName: [{ required: true, message: '请输入文件名', trigger: 'blur' }]
+      },
     }
   },
   watch: {
@@ -310,6 +381,11 @@ export default {
   mounted() {
     this.initialize()
   },
+  // 被 <keep-alive> 缓存的情况下，从其他标签页切回时会触发 activated
+  activated() {
+    // 切回流程编排标签时，强制重新挂载 MapViewer3D，避免 WebGL 画面黑屏
+    this.mapViewerKey++
+  },
   beforeDestroy() {
     this.stopExecution()
     this.disconnectROS()
@@ -319,6 +395,23 @@ export default {
       this.loadSavedPositions()
       this.loadFlowList()
       this.connectROS()
+      this.loadVoiceList()
+    },
+
+    // 加载语音列表
+    loadVoiceList() {
+      listVoice().then(response => {
+        if (response.code === 200 && response.data) {
+          // 将后端语音配置转换为前端可拖拽的数据结构
+          this.voiceList = response.data.map(item => ({
+            id: item.id,
+            name: item.fileName || item.ttsText,
+            command: item.fileName, // 作为后续流程执行时的语音指令标识
+            type: 'voice',
+            waitTime: 10
+          }))
+        }
+      })
     },
 
     // 加载流程列表
@@ -414,6 +507,52 @@ export default {
       }
     },
 
+    // 打开添加语音弹框
+    openAddVoiceDialog() {
+      this.addVoiceDialogVisible = true
+      this.$nextTick(() => {
+        if (this.$refs.addVoiceForm) {
+          this.$refs.addVoiceForm.resetFields()
+        }
+        this.newVoiceForm.ttsText = ''
+        this.newVoiceForm.fileName = ''
+      })
+    },
+
+    // 保存新语音：保存到 MySQL 并在后端立刻发送到 ROS2
+    handleSaveNewVoice() {
+      this.$refs.addVoiceForm.validate(async (valid) => {
+        if (!valid) return
+        this.addVoiceLoading = true
+        try {
+          const payload = {
+            ttsText: this.newVoiceForm.ttsText,
+            fileName: this.newVoiceForm.fileName
+          }
+          const res = await addVoice(payload)
+          if (res.code === 200) {
+            // 保存成功后，发布语音命令到 ROS2
+            if (this.rosConnected) {
+              const voiceData = {
+                tts_text: this.newVoiceForm.ttsText,
+                fileName: this.newVoiceForm.fileName
+              }
+              this.publishVoice(JSON.stringify(voiceData))
+            }
+            this.$message.success(res.msg || '保存成功，已发送到ROS2')
+            this.addVoiceDialogVisible = false
+            this.loadVoiceList()
+          } else {
+            this.$message.error(res.msg || '保存失败')
+          }
+        } catch (e) {
+          this.$message.error('保存语音失败：' + (e.message || '未知错误'))
+        } finally {
+          this.addVoiceLoading = false
+        }
+      })
+    },
+
     removeStep(index) {
       this.processList.splice(index, 1)
     },
@@ -465,6 +604,30 @@ export default {
           }
         })
       }
+    },
+
+    // 删除语音配置
+    handleDeleteVoice(voice) {
+      this.$confirm('确认删除该语音配置吗？', '提示', {
+        type: 'warning'
+      }).then(() => {
+        delVoice(voice.id).then(response => {
+          if (response.code === 200) {
+            this.$message.success('删除成功')
+            this.loadVoiceList()
+          }
+        })
+      })
+    },
+
+    // 列表直接播放语音
+    playVoiceItem(voice) {
+      if (!this.rosConnected) {
+        this.$message.warning('请先连接 ROS')
+        return
+      }
+      this.publishVoice(voice.command)
+      this.$message.success(`已发送语音指令: ${voice.command}`)
     },
 
     // ROS 连接逻辑
@@ -611,8 +774,16 @@ export default {
       if (!this.isExecuting) return
       
       if (this.currentStepIndex >= this.processList.length) {
-        this.$message.success('流程执行完成')
-        this.stopExecution()
+        // 已到最后一步，判断是否巡检
+        if (this.isLoopInspect) {
+          this.$message.success('本轮流程执行完成，开始下一轮巡检')
+          this.currentStepIndex = 0
+          this.isWaitingForContinue = false
+          this.executeStep()
+        } else {
+          this.$message.success('流程执行完成')
+          this.stopExecution()
+        }
         return
       }
 
@@ -723,6 +894,8 @@ export default {
 }
 </script>
 
+<!-- 添加语音弹框样式可复用全局 Element UI 默认样式，此处无需额外样式 -->
+
 <style scoped>
 .flow-process-container {
   height: calc(100vh - 84px);
@@ -792,8 +965,8 @@ export default {
 }
 
 .voice-panel {
-  flex: 1;
-  min-height: 200px;
+  flex: 2;
+  min-height: 250px;
 }
 
 .position-panel {

@@ -1,6 +1,7 @@
 package com.ruoyi.web.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.web.model.dto.NavigationGoalDTO;
 import com.ruoyi.web.model.dto.TextToSpeechDTO;
 import com.ruoyi.web.service.Ros2NavigationService;
@@ -257,6 +258,41 @@ public class Ros2NavigationServiceImpl implements Ros2NavigationService {
             return true;
         } catch (IOException e) {
             logger.error("发送文本转语音请求失败", e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean publishVoiceWords(String ttsText, String fileName) {
+        if (!connected || clientEndpoint == null || !clientEndpoint.isOpen()) {
+            logger.error("ROS Bridge未连接，无法向 /voice_words 发布语音命令");
+            return false;
+        }
+
+        try {
+            // 内层 payload：{"tts_text":"xxx","fileName":"voiceX"}
+            ObjectNode payloadNode = objectMapper.createObjectNode();
+            payloadNode.put("tts_text", ttsText);
+            payloadNode.put("fileName", fileName);
+            String payloadJson = objectMapper.writeValueAsString(payloadNode);
+
+            // 外层 rosbridge publish 消息
+            ObjectNode msgNode = objectMapper.createObjectNode();
+            msgNode.put("op", "publish");
+            msgNode.put("topic", "/voice_words");
+            ObjectNode dataNode = objectMapper.createObjectNode();
+            // data 字段是一个 JSON 字符串，与命令行：
+            // ros2 topic pub --once /voice_words std_msgs/msg/String "data: '{\"tts_text\":\"新测试\",\"fileName\":\"voice4\"}'"
+            // 保持一致
+            dataNode.put("data", payloadJson);
+            msgNode.set("msg", dataNode);
+
+            String message = objectMapper.writeValueAsString(msgNode);
+            logger.info("向 /voice_words 发布语音命令: {}", message);
+            clientEndpoint.sendMessage(message);
+            return true;
+        } catch (Exception e) {
+            logger.error("向 /voice_words 发布语音命令失败", e);
             return false;
         }
     }
